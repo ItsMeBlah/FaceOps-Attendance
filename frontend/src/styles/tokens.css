@@ -1,0 +1,67 @@
+/* ──────────────────────────────────────────────────────────
+   DESIGN TOKENS — Dark Editorial / "Field Bureau, Night Shift"
+   Warm dark base (no blue), amber accent, cream typography.
+   The aesthetic of an old dossier read by lamplight.
+   ────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── COLOR / inverted from paper to ink ── */
+  --bg:              #0E0C0A;   /* main background, deep warm black */
+  --bg-2:            #161311;   /* lifted surfaces */
+  --bg-3:            #211D17;   /* recessed / inner cards */
+  --bg-4:            #2A251D;
+  --edge:            #3A3329;   /* primary dividers */
+  --edge-soft:       #28231C;
+  --edge-strong:     #4A4136;
+
+  --paper:           #E8DFC9;   /* primary text — warm aged cream */
+  --paper-2:         #B5AB94;   /* secondary text */
+  --paper-3:         #837A66;   /* tertiary */
+  --paper-mute:      #555044;
+  --paper-faint:     #3A352D;
+
+  --accent:          #E2823A;   /* warm amber — primary accent */
+  --accent-bright:   #F5A05A;
+  --accent-deep:     #B86225;
+  --accent-tint:     rgba(226, 130, 58, 0.14);
+  --accent-glow:     rgba(226, 130, 58, 0.4);
+
+  --signal-go:       #8AAF5E;   /* sage green */
+  --signal-go-tint:  rgba(138, 175, 94, 0.16);
+
+  --signal-warn:     #D9A33B;
+  --signal-warn-tint: rgba(217, 163, 59, 0.16);
+
+  --signal-stop:     #D14A2F;   /* alert red, distinct from amber */
+  --signal-stop-tint: rgba(209, 74, 47, 0.16);
+
+  /* ── camera viewport (the darkest area, for video contrast) ── */
+  --frame-bg:        #050402;
+  --frame-edge:      #3A3329;
+
+  /* ── TYPOGRAPHY ── */
+  --font-display: 'Fraunces', 'Times New Roman', Georgia, serif;
+  --font-sans:    'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:    'IBM Plex Mono', 'Courier New', monospace;
+
+  /* ── SCALE ── */
+  --t-micro:  10px;
+  --t-tiny:   11px;
+  --t-small:  13px;
+  --t-body:   14px;
+  --t-lead:   16px;
+  --t-h4:     20px;
+  --t-h3:     26px;
+  --t-h2:     38px;
+  --t-h1:     56px;
+
+  /* ── RADII ── */
+  --r-sm: 2px;
+  --r-md: 3px;
+
+  /* ── MOTION ── */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --d-fast: 140ms;
+  --d-med:  240ms;
+  --d-slow: 420ms;
+}
