@@ -1,0 +1,51 @@
+[project]
+name = "facial-attendance-system"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/API_endpoint_unit_test"]
+python_files = ["*_unit_tests.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+timeout = 30
+log_cli = true
+log_cli_level = "INFO"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    "__pycache__",
+    "*.egg-info",
+    ".venv",
+    "venv",
+    "weights",
+    "captures",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes — unused imports, undefined names
+    "I",    # isort — import ordering
+    "W",    # pycodestyle warnings
+]
+ignore = [
+    "E501",  # line too long — black handles this
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+exclude = '''
+/(
+    \.git
+  | __pycache__
+  | \.venv
+  | venv
+  | weights
+  | captures
+)/
+'''
