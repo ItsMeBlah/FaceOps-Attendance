@@ -1,0 +1,83 @@
+# All dataset paths come from `root` below (relative to repo_root or absolute).
+# `split` chooses which partition under that root receives new images.
+
+repo_root: ""
+
+captures_dir: backend/captures
+
+manifest_path: ""
+
+min_confidence: 0.85
+min_detection_confidence: 0.5
+
+targets:
+  # ── Anti-spoofing (LCC_FASD) ─────────────────────────────────────────────
+  # root = directory that CONTAINS the LCC_FASD_* split folders, e.g.:
+  #   C:/path/to/LCC_FASD
+  #
+  # On disk:
+  #   LCC_FASD/
+  #     LCC_FASD_training/      ← split: training
+  #       real/
+  #       spoof/
+  #     LCC_FASD_development/  ← split: development
+  #       real/
+  #       spoof/
+  #     LCC_FASD_evaluation/   ← split: evaluation
+  #       real/
+  #       spoof/
+  anti_spoofing:
+    enabled: false
+    root: ""
+    split: training
+    label_from: liveness
+    min_confidence: 0.85
+
+  # ── Emotion FER2013 ────────────────────────────────────────────────────────
+  # root = parent of train/ and test/, e.g.:
+  #   training_module/emotion_module/fer/fer2013
+  #
+  # On disk:
+  #   fer2013/
+  #     train/
+  #       angry/
+  #       happy/
+  #       ...
+  #     test/
+  #       angry/
+  #       ...
+  emotion_fer:
+    enabled: false
+    root: ""
+    split: train
+    label_from: emotion
+    min_confidence: 0.85
+
+  # ── Emotion AffectNet ──────────────────────────────────────────────────────
+  # root = parent of Train/ and Test/, e.g.:
+  #   training_module/emotion_module/affectnet/AffectNet
+  #
+  # On disk:
+  #   AffectNet/
+  #     Train/
+  #       anger/
+  #       happy/
+  #       ...
+  #     Test/
+  #       ...
+  emotion_affectnet:
+    enabled: false
+    root: ""
+    split: train
+    label_from: emotion
+    min_confidence: 0.85
+
+  # ── Face recognition (optional) ────────────────────────────────────────────
+  # root = classification_data (contains train_data/, val_data/, test_data/)
+  face_recognition:
+    enabled: false
+    root: ""
+    split: train
+    label_from: recognition
+    only_matched: true
+    min_confidence: 0.90

@@ -214,19 +214,29 @@ __marimo__/
 # Face_Detection_Module
 /training_module/Face_detection_module/model
 
-
-
-# Local raw data path for training.py
-RAW_DATA_PATH=C:/Users/bbtnz/OneDrive/Documents/LCC_FASD
-
+# Anti-spoofing module (MobileNetV2 / LCC_FASD)
+# Training writes checkpoints, metrics, and plots to model/ (see anti_spoofing.py)
+/training_module/anti_spoofing_module_MobileNetV2/model/
+# Local LCC_FASD copies if you train from inside this folder (RAW_DATA_DIR = cwd)
+/training_module/anti_spoofing_module_MobileNetV2/LCC_FASD/
+/training_module/anti_spoofing_module_MobileNetV2/LCC_FASD_training/
+/training_module/anti_spoofing_module_MobileNetV2/LCC_FASD_development/
+/training_module/anti_spoofing_module_MobileNetV2/LCC_FASD_evaluation/
 
 /emotion_module/fer/fer2013
 /emotion_module/yolo/YOLO_format
 /emotion_module/yolo/runs
 /emotion_module/affectnet/AffectNet
 
+/anti_spoofing_module_MobileNetV2/model/
+/anti_spoofing_module_MobileNetV2/LCC_FASD/
+/anti_spoofing_module_MobileNetV2/LCC_FASD_training/
+/anti_spoofing_module_MobileNetV2/LCC_FASD_development/
+/anti_spoofing_module_MobileNetV2/LCC_FASD_evaluation/
+
 /training_module/face_recognition_module/dataset
 /training_module/face_recognition_module/checkpoints_resnet18
 /training_module/face_recognition_module/weights
 /backend/weights/arcface.onnx
 /backend/captures/
+/backend/scripts/.merge_manifest.json
