@@ -240,3 +240,4 @@ __marimo__/
 /backend/weights/arcface.onnx
 /backend/captures/
 /backend/scripts/.merge_manifest.json
+/training_module/face_recognition_module/test_align/data

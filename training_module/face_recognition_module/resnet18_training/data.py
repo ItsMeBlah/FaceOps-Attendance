@@ -88,7 +88,7 @@ def build_dataloaders(
     train_dataset = build_dataset(
         data_root,
         "train",
-        image_size=image_size,
+        image_size=image_size, 
         grayscale=grayscale,
         resize_size=resize_size,
     )

@@ -4,12 +4,14 @@ import argparse
 import csv
 import json
 import random
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, Optional, Sequence
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .data import build_dataloaders
 from .heads import ArcMarginProduct
@@ -27,7 +29,7 @@ DEFAULT_DATA_ROOT = (
     Path(__file__).resolve().parents[1]
     / "dataset"
     / "11-785-fall-20-homework-2-part-2"
-    / "classification_data"
+    / "classification_data_aligned"
 )
 
 
@@ -35,7 +37,7 @@ DEFAULT_DATA_ROOT = (
 class TrainConfig:
     data_root: str = str(DEFAULT_DATA_ROOT)
     output_dir: str = "checkpoints_resnet18"
-    image_size: int = 128
+    image_size: int = 128 # 112
     resize_size: int = 144
     embedding_size: int = 512
     batch_size: int = 64
@@ -50,7 +52,7 @@ class TrainConfig:
     momentum: float = 0.9
     scheduler: str = "step"
     lr_step: int = 10
-    lr_gamma: float = 0.05
+    lr_gamma: float = 0.1
     min_lr: float = 1e-6
     arc_scale: float = 30.0
     arc_margin: float = 0.5
@@ -64,6 +66,13 @@ class TrainConfig:
     progress: bool = True
     plot_logs: bool = True
     confusion_image_max_classes: int = 200
+    verification_eval: bool = True
+    verification_negative_ratio: int = 5
+    verification_max_positive_pairs: int = 20000
+    verification_max_negative_pairs: int = 100000
+    verification_save_pairs: bool = True
+    early_stopping_patience: int = 6
+    early_stopping_min_delta: float = 0.0
     save_every: int = 1
     resume: str = ""
     resume_training_state: bool = False
@@ -255,6 +264,85 @@ class TrainingLogger:
         fig.tight_layout()
         fig.savefig(self.output_dir / "test_confusion_matrix.png", dpi=160)
         plt.close(fig)
+
+    def save_roc_curve(
+        self,
+        split: str,
+        fpr: torch.Tensor,
+        tpr: torch.Tensor,
+        thresholds: torch.Tensor,
+        auc: float,
+    ) -> None:
+        csv_path = self.output_dir / f"{split}_roc_curve.csv"
+        with csv_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["threshold", "fpr", "tpr"])
+            for threshold, fpr_value, tpr_value in zip(thresholds.tolist(), fpr.tolist(), tpr.tolist()):
+                writer.writerow([threshold, fpr_value, tpr_value])
+
+        if not self.enabled_plots:
+            return
+
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("matplotlib is not installed; skipped ROC curve plot")
+            return
+
+        fig, ax = plt.subplots(figsize=(7, 6))
+        ax.plot(fpr.numpy(), tpr.numpy(), label=f"{split} ROC (AUC={auc:.4f})")
+        ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", color="0.5", label="random")
+        ax.set_xlabel("False Positive Rate")
+        ax.set_ylabel("True Positive Rate")
+        ax.set_title(f"{split.capitalize()} Face Verification ROC")
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="lower right")
+        fig.tight_layout()
+        fig.savefig(self.output_dir / f"{split}_roc_curve.png", dpi=160)
+        plt.close(fig)
+
+    def save_verification_pairs(
+        self,
+        split: str,
+        pairs: Sequence[tuple[int, int, int]],
+        scores: torch.Tensor,
+        class_names: Sequence[str],
+        labels: torch.Tensor,
+        paths: Optional[Sequence[str]],
+    ) -> None:
+        csv_path = self.output_dir / f"{split}_verification_pairs.csv"
+        with csv_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    "left_index",
+                    "right_index",
+                    "left_class",
+                    "right_class",
+                    "is_same",
+                    "similarity",
+                    "left_path",
+                    "right_path",
+                ]
+            )
+            for (left_idx, right_idx, is_same), score in zip(pairs, scores.tolist()):
+                left_label = int(labels[left_idx].item())
+                right_label = int(labels[right_idx].item())
+                writer.writerow(
+                    [
+                        left_idx,
+                        right_idx,
+                        class_names[left_label],
+                        class_names[right_label],
+                        is_same,
+                        score,
+                        paths[left_idx] if paths is not None else "",
+                        paths[right_idx] if paths is not None else "",
+                    ]
+                )
 
     def close(self) -> None:
         self.save_history()
@@ -484,6 +572,223 @@ class Trainer:
             results["confusion_matrix"] = metrics.confusion
         return results
 
+    @torch.no_grad()
+    def extract_embeddings(self, split: str) -> tuple[torch.Tensor, torch.Tensor]:
+        self.model.eval()
+        embeddings = []
+        labels_list = []
+
+        for images, labels in self._progress(self.loaders[split], f"{split} embeddings"):
+            images = images.to(self.device, non_blocking=True)
+            features = self.model(images)
+            embeddings.append(F.normalize(features, dim=1).cpu())
+            labels_list.append(labels.long().cpu())
+
+        return torch.cat(embeddings, dim=0), torch.cat(labels_list, dim=0)
+
+    def evaluate_verification(self, split: str) -> Dict[str, object]:
+        if not self.config.verification_eval:
+            return {}
+
+        embeddings, labels = self.extract_embeddings(split)
+        pairs = self._build_verification_pairs(labels, split)
+        if not pairs:
+            print(f"{split} verification skipped: not enough positive and negative pairs")
+            return {
+                "verification_auc": float("nan"),
+                "verification_best_threshold": float("nan"),
+                "verification_best_accuracy": float("nan"),
+                "verification_eer": float("nan"),
+                "verification_positive_pairs": 0,
+                "verification_negative_pairs": 0,
+                "verification_pairs": 0,
+            }
+
+        scores = self._score_verification_pairs(embeddings, pairs)
+        targets = torch.tensor([is_same for _, _, is_same in pairs], dtype=torch.long)
+        roc = self._compute_roc_auc(scores, targets)
+        if roc is None:
+            print(f"{split} verification skipped: ROC needs both same-person and different-person pairs")
+            return {
+                "verification_auc": float("nan"),
+                "verification_best_threshold": float("nan"),
+                "verification_best_accuracy": float("nan"),
+                "verification_eer": float("nan"),
+                "verification_positive_pairs": int(targets.sum().item()),
+                "verification_negative_pairs": int((targets == 0).sum().item()),
+                "verification_pairs": int(targets.numel()),
+            }
+
+        fpr, tpr, thresholds, auc, best_threshold, best_accuracy, eer = roc
+        self.logger.save_roc_curve(split, fpr, tpr, thresholds, auc)
+
+        if self.config.verification_save_pairs:
+            self.logger.save_verification_pairs(
+                split=split,
+                pairs=pairs,
+                scores=scores,
+                class_names=self.metadata["classes"],
+                labels=labels,
+                paths=self._split_paths(split, labels.numel()),
+            )
+
+        return {
+            "verification_auc": auc,
+            "verification_best_threshold": best_threshold,
+            "verification_best_accuracy": best_accuracy,
+            "verification_eer": eer,
+            "verification_positive_pairs": int(targets.sum().item()),
+            "verification_negative_pairs": int((targets == 0).sum().item()),
+            "verification_pairs": int(targets.numel()),
+        }
+
+    def _split_paths(self, split: str, expected_count: int) -> Optional[list[str]]:
+        dataset = self.loaders[split].dataset
+        samples = getattr(dataset, "samples", None)
+        if samples is None or len(samples) != expected_count:
+            return None
+        return [str(path) for path, _ in samples]
+
+    def _build_verification_pairs(self, labels: torch.Tensor, split: str) -> list[tuple[int, int, int]]:
+        labels_by_class: dict[int, list[int]] = defaultdict(list)
+        for idx, label in enumerate(labels.tolist()):
+            labels_by_class[int(label)].append(idx)
+
+        positive_total = sum(len(indices) * (len(indices) - 1) // 2 for indices in labels_by_class.values())
+        positive_cap = self.config.verification_max_positive_pairs
+        positive_target = positive_total if positive_cap <= 0 else min(positive_total, positive_cap)
+        if positive_target == 0:
+            return []
+
+        split_offset = sum((idx + 1) * ord(char) for idx, char in enumerate(split))
+        rng = random.Random(self.config.seed + split_offset)
+        positive_pairs = self._sample_positive_pairs(labels_by_class, positive_total, positive_target, rng)
+
+        num_items = labels.numel()
+        all_pair_count = num_items * (num_items - 1) // 2
+        negative_total = all_pair_count - positive_total
+        negative_target = min(negative_total, positive_target * max(self.config.verification_negative_ratio, 0))
+        if self.config.verification_max_negative_pairs > 0:
+            negative_target = min(negative_target, self.config.verification_max_negative_pairs)
+        if negative_target == 0:
+            return []
+
+        negative_pairs = self._sample_negative_pairs(labels, negative_target, rng)
+        return [(left, right, 1) for left, right in positive_pairs] + [
+            (left, right, 0) for left, right in negative_pairs
+        ]
+
+    def _sample_positive_pairs(
+        self,
+        labels_by_class: dict[int, list[int]],
+        positive_total: int,
+        positive_target: int,
+        rng: random.Random,
+    ) -> list[tuple[int, int]]:
+        if positive_total <= positive_target:
+            pairs = []
+            for indices in labels_by_class.values():
+                for left_pos, left_idx in enumerate(indices):
+                    for right_idx in indices[left_pos + 1:]:
+                        pairs.append((left_idx, right_idx))
+            return pairs
+
+        eligible_labels = [label for label, indices in labels_by_class.items() if len(indices) >= 2]
+        weights = [len(labels_by_class[label]) * (len(labels_by_class[label]) - 1) // 2 for label in eligible_labels]
+        pairs: list[tuple[int, int]] = []
+        seen: set[tuple[int, int]] = set()
+        while len(pairs) < positive_target:
+            label = rng.choices(eligible_labels, weights=weights, k=1)[0]
+            left_idx, right_idx = sorted(rng.sample(labels_by_class[label], 2))
+            key = (left_idx, right_idx)
+            if key in seen:
+                continue
+            seen.add(key)
+            pairs.append(key)
+        return pairs
+
+    def _sample_negative_pairs(
+        self,
+        labels: torch.Tensor,
+        negative_target: int,
+        rng: random.Random,
+    ) -> list[tuple[int, int]]:
+        label_values = labels.tolist()
+        num_items = len(label_values)
+        pairs: list[tuple[int, int]] = []
+        seen: set[tuple[int, int]] = set()
+        max_attempts = max(negative_target * 50, 1000)
+        attempts = 0
+
+        while len(pairs) < negative_target and attempts < max_attempts:
+            left_idx, right_idx = sorted(rng.sample(range(num_items), 2))
+            attempts += 1
+            if label_values[left_idx] == label_values[right_idx]:
+                continue
+            key = (left_idx, right_idx)
+            if key in seen:
+                continue
+            seen.add(key)
+            pairs.append(key)
+
+        if len(pairs) == negative_target:
+            return pairs
+
+        for left_idx in range(num_items):
+            for right_idx in range(left_idx + 1, num_items):
+                if label_values[left_idx] == label_values[right_idx]:
+                    continue
+                key = (left_idx, right_idx)
+                if key in seen:
+                    continue
+                pairs.append(key)
+                if len(pairs) == negative_target:
+                    return pairs
+        return pairs
+
+    def _score_verification_pairs(self, embeddings: torch.Tensor, pairs: Sequence[tuple[int, int, int]]) -> torch.Tensor:
+        left_indices = torch.tensor([left for left, _, _ in pairs], dtype=torch.long)
+        right_indices = torch.tensor([right for _, right, _ in pairs], dtype=torch.long)
+        return (embeddings[left_indices] * embeddings[right_indices]).sum(dim=1)
+
+    def _compute_roc_auc(
+        self,
+        scores: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, float, float, float]]:
+        positives = int(targets.sum().item())
+        negatives = int((targets == 0).sum().item())
+        if positives == 0 or negatives == 0:
+            return None
+
+        order = torch.argsort(scores, descending=True)
+        sorted_scores = scores[order].float()
+        sorted_targets = targets[order].float()
+        true_positives = torch.cumsum(sorted_targets, dim=0)
+        false_positives = torch.cumsum(1.0 - sorted_targets, dim=0)
+
+        distinct = torch.ones_like(sorted_targets, dtype=torch.bool)
+        distinct[:-1] = sorted_scores[:-1] != sorted_scores[1:]
+
+        tpr = true_positives[distinct] / positives
+        fpr = false_positives[distinct] / negatives
+        thresholds = sorted_scores[distinct]
+
+        zero = torch.tensor([0.0])
+        tpr = torch.cat([zero, tpr.cpu()])
+        fpr = torch.cat([zero, fpr.cpu()])
+        thresholds = torch.cat([torch.tensor([float("inf")]), thresholds.cpu()])
+        auc = float(torch.trapz(tpr, fpr).item())
+
+        best_idx = int(torch.argmax(tpr[1:] - fpr[1:]).item()) + 1
+        best_threshold = float(thresholds[best_idx].item())
+        predictions = scores >= best_threshold
+        best_accuracy = float(predictions.eq(targets.bool()).float().mean().item())
+
+        eer_idx = int(torch.argmin(torch.abs(fpr - (1.0 - tpr))).item())
+        eer = float(((fpr[eer_idx] + (1.0 - tpr[eer_idx])) / 2.0).item())
+        return fpr, tpr, thresholds, auc, best_threshold, best_accuracy, eer
+
     def run(self) -> None:
         print(f"device: {self.device}")
         print(
@@ -492,6 +797,7 @@ class Trainer:
         )
 
         try:
+            epochs_without_improvement = 0
             for epoch in range(self.start_epoch, self.config.epochs + 1):
                 train_metrics = self.train_one_epoch(epoch)
                 val_metrics = self.evaluate("val")
@@ -507,22 +813,44 @@ class Trainer:
                     f"f1 {val_metrics['f1']:.4f}"
                 )
 
-                is_best = val_metrics["accuracy"] > self.best_val_acc
+                previous_best_val_acc = self.best_val_acc
+                val_accuracy = float(val_metrics["accuracy"])
+                min_delta = max(self.config.early_stopping_min_delta, 0.0)
+                is_best = val_accuracy > self.best_val_acc
+                is_meaningful_improvement = val_accuracy > previous_best_val_acc + min_delta
                 if is_best:
-                    self.best_val_acc = val_metrics["accuracy"]
+                    self.best_val_acc = val_accuracy
                 should_save = is_best or (self.config.save_every and epoch % self.config.save_every == 0)
                 if should_save:
                     self.save_checkpoint(epoch=epoch, is_best=is_best)
 
+                if self.config.early_stopping_patience > 0:
+                    if is_meaningful_improvement:
+                        epochs_without_improvement = 0
+                    else:
+                        epochs_without_improvement += 1
+                    if epochs_without_improvement >= self.config.early_stopping_patience:
+                        print(
+                            f"early stopping at epoch {epoch:03d}: "
+                            f"val accuracy did not improve by at least {min_delta:.6f} for "
+                            f"{self.config.early_stopping_patience} epoch(s). "
+                            f"best val acc {self.best_val_acc:.4f}"
+                        )
+                        break
+
             if "test" in self.loaders:
                 test_metrics = self.evaluate("test", build_confusion=True)
                 confusion = test_metrics.pop("confusion_matrix")
+                test_metrics.update(self.evaluate_verification("test"))
                 self.save_confusion_matrix(confusion)
                 self.logger.log_test(test_metrics, confusion, self.config.confusion_image_max_classes)
+                test_auc_text = ""
+                if "verification_auc" in test_metrics:
+                    test_auc_text = f" auc {float(test_metrics['verification_auc']):.4f}"
                 print(
                     f"test loss {test_metrics['loss']:.4f} acc {test_metrics['accuracy']:.4f} "
                     f"precision {test_metrics['precision']:.4f} recall {test_metrics['recall']:.4f} "
-                    f"f1 {test_metrics['f1']:.4f}"
+                    f"f1 {test_metrics['f1']:.4f}{test_auc_text}"
                 )
         finally:
             self.logger.close()
@@ -646,6 +974,38 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--no-progress", action="store_false", dest="progress")
     parser.add_argument("--no-plots", action="store_false", dest="plot_logs")
     parser.add_argument("--confusion-image-max-classes", type=int, default=TrainConfig.confusion_image_max_classes)
+    parser.add_argument("--no-verification-eval", action="store_false", dest="verification_eval")
+    parser.add_argument(
+        "--verification-negative-ratio",
+        type=int,
+        default=TrainConfig.verification_negative_ratio,
+        help="Number of sampled different-person pairs per same-person pair.",
+    )
+    parser.add_argument(
+        "--verification-max-positive-pairs",
+        type=int,
+        default=TrainConfig.verification_max_positive_pairs,
+        help="Maximum same-person pairs for ROC/AUC. Use 0 for all available pairs.",
+    )
+    parser.add_argument(
+        "--verification-max-negative-pairs",
+        type=int,
+        default=TrainConfig.verification_max_negative_pairs,
+        help="Maximum different-person pairs for ROC/AUC. Use 0 to only apply the ratio cap.",
+    )
+    parser.add_argument("--no-verification-save-pairs", action="store_false", dest="verification_save_pairs")
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=TrainConfig.early_stopping_patience,
+        help="Stop when val accuracy has no meaningful improvement for this many epochs. 0 disables early stopping.",
+    )
+    parser.add_argument(
+        "--early-stopping-min-delta",
+        type=float,
+        default=TrainConfig.early_stopping_min_delta,
+        help="Minimum val accuracy improvement required to reset early stopping patience.",
+    )
     parser.add_argument("--save-every", type=int, default=TrainConfig.save_every)
     parser.add_argument("--resume", default=TrainConfig.resume)
     parser.add_argument(
@@ -657,6 +1017,8 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--no-cuda", action="store_true")
     parser.set_defaults(progress=TrainConfig.progress)
     parser.set_defaults(plot_logs=TrainConfig.plot_logs)
+    parser.set_defaults(verification_eval=TrainConfig.verification_eval)
+    parser.set_defaults(verification_save_pairs=TrainConfig.verification_save_pairs)
     return TrainConfig(**vars(parser.parse_args()))
 
 
