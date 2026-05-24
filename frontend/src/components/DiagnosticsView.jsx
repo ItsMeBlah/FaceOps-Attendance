@@ -25,6 +25,21 @@ export default function DiagnosticsView({ camera }) {
   const [pixelBox, setPixelBox] = useState(null);
   const [lastCropPreview, setLastCropPreview] = useState(null);
   const [backendReachable, setBackendReachable] = useState(null);
+  const [overlayBox, setOverlayBox] = useState({ bbox: HARDCODED_BOX, source: 'hardcoded' });
+
+  const normalizeBBox = useCallback((bbox, imgW, imgH) => {
+    if (!bbox) return null;
+    const isNormalized =
+      bbox.x <= 1 && bbox.y <= 1 && bbox.w <= 1 && bbox.h <= 1;
+    if (isNormalized) return bbox;
+    if (!imgW || !imgH) return null;
+    return {
+      x: bbox.x / imgW,
+      y: bbox.y / imgH,
+      w: bbox.w / imgW,
+      h: bbox.h / imgH,
+    };
+  }, []);
 
   // ── Backend reachability check on mount + every 5s ──
   useEffect(() => {
@@ -38,22 +53,7 @@ export default function DiagnosticsView({ camera }) {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  // ── Resize overlay canvas to match container ──
-  useEffect(() => {
-    const resize = () => {
-      const c = overlayRef.current;
-      const box = containerRef.current?.getBoundingClientRect();
-      if (!c || !box) return;
-      c.width = box.width;
-      c.height = box.height;
-      drawOverlay();
-    };
-    resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, [camera.active]);
-
-  // ── Draw the hardcoded box on the overlay ──
+  // ── Draw the current overlay box (hardcoded or detection) ──
   const drawOverlay = useCallback(() => {
     const c = overlayRef.current;
     if (!c) return;
@@ -72,20 +72,21 @@ export default function DiagnosticsView({ camera }) {
     if (ca > va) { scale = cw / iw; oy = (ch - ih * scale) / 2; }
     else         { scale = ch / ih; ox = (cw - iw * scale) / 2; }
 
-    let bx = HARDCODED_BOX.x * iw * scale + ox;
-    const by = HARDCODED_BOX.y * ih * scale + oy;
-    const bw = HARDCODED_BOX.w * iw * scale;
-    const bh = HARDCODED_BOX.h * ih * scale;
+    const activeBox = overlayBox?.bbox || HARDCODED_BOX;
+    let bx = activeBox.x * iw * scale + ox;
+    const by = activeBox.y * ih * scale + oy;
+    const bw = activeBox.w * iw * scale;
+    const bh = activeBox.h * ih * scale;
 
     // Flip x for the mirrored video display
     bx = cw - bx - bw;
 
     // Update pixel box state for the info strip (un-mirrored, original)
     setPixelBox({
-      x: Math.floor(HARDCODED_BOX.x * iw),
-      y: Math.floor(HARDCODED_BOX.y * ih),
-      w: Math.floor(HARDCODED_BOX.w * iw),
-      h: Math.floor(HARDCODED_BOX.h * ih),
+      x: Math.floor(activeBox.x * iw),
+      y: Math.floor(activeBox.y * ih),
+      w: Math.floor(activeBox.w * iw),
+      h: Math.floor(activeBox.h * ih),
     });
 
     // Box: corner brackets + dashed center, accent color
@@ -115,19 +116,23 @@ export default function DiagnosticsView({ camera }) {
     // Label above
     ctx.font = '600 9px "IBM Plex Mono", monospace';
     ctx.fillStyle = '#E2823A';
-    ctx.fillText('CROP REGION // HARDCODED', bx, by - 8);
-  }, [camera.active, camera.videoRef]);
+    const label = overlayBox?.source === 'detect' ? 'DETECTION // LIVE' : 'CROP REGION // HARDCODED';
+    ctx.fillText(label, bx, by - 8);
+  }, [camera.active, camera.videoRef, overlayBox]);
 
-  // Redraw on tick (camera frames update)
+  // ── Resize overlay canvas to match container ──
   useEffect(() => {
-    if (!camera.active) return;
-    let raf;
-    const loop = () => {
+    const resize = () => {
+      const c = overlayRef.current;
+      const box = containerRef.current?.getBoundingClientRect();
+      if (!c || !box) return;
+      c.width = box.width;
+      c.height = box.height;
       drawOverlay();
-      raf = requestAnimationFrame(loop);
     };
-    loop();
-    return () => cancelAnimationFrame(raf);
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
   }, [camera.active, drawOverlay]);
 
   // ── Helpers used by endpoint cards ──
@@ -155,12 +160,32 @@ export default function DiagnosticsView({ camera }) {
   // ── Endpoint test runners ──
   const runPipeline = async () => {
     const err = requireCam(); if (err) return err;
-    return postPipeline(await getFullFrame());
+    const res = await postPipeline(await getFullFrame());
+    if (res?.ok) {
+      const face = res.body?.faces?.[0]?.face;
+      const bbox = normalizeBBox(face?.bbox, res.body?.image_width, res.body?.image_height);
+      if (bbox) {
+        setOverlayBox({ bbox, source: 'detect' });
+      }
+    }
+    return res;
   };
   const runDetect = async () => {
     const err = requireCam(); if (err) return err;
-    return postDetect(await getFullFrame());
+    const res = await postDetect(await getFullFrame());
+    if (res?.ok) {
+      const face = res.body?.faces?.[0];
+      const bbox = normalizeBBox(face?.bbox, res.body?.image_width, res.body?.image_height);
+      if (bbox) {
+        setOverlayBox({ bbox, source: 'detect' });
+      }
+    }
+    return res;
   };
+
+  useEffect(() => {
+    if (camera.active) drawOverlay();
+  }, [camera.active, drawOverlay, overlayBox]);
   const runEmotion = async () => {
     const err = requireCam(); if (err) return err;
     return postEmotion(await getCrop());
@@ -228,7 +253,8 @@ export default function DiagnosticsView({ camera }) {
             </div>
             <div className="camera__counter">
               <strong className="t-num">{camera.active ? 'LIVE' : 'OFF'}</strong>
-              &nbsp;&middot;&nbsp; hardcoded {(HARDCODED_BOX.w * 100).toFixed(0)}%×{(HARDCODED_BOX.h * 100).toFixed(0)}% region
+              &nbsp;&middot;&nbsp; {overlayBox?.source === 'detect' ? 'detected' : 'hardcoded'}
+              &nbsp;{((overlayBox?.bbox?.w ?? HARDCODED_BOX.w) * 100).toFixed(0)}%×{((overlayBox?.bbox?.h ?? HARDCODED_BOX.h) * 100).toFixed(0)}% region
             </div>
           </div>
         </div>
