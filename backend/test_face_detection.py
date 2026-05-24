@@ -185,6 +185,81 @@ def check_crop_dimensions(faces: list) -> bool:
     )
 
 
+def check_keypoints_present(faces: list) -> bool:
+    all_ok = True
+    for i, face in enumerate(faces):
+        kps = face.get("keypoints")
+        if kps is None:
+            all_ok = False
+            print(f"    Face {i}: 'keypoints' key missing from response")
+        elif not isinstance(kps, list):
+            all_ok = False
+            print(f"    Face {i}: keypoints is {type(kps).__name__}, expected list")
+        elif len(kps) != 5:
+            all_ok = False
+            print(f"    Face {i}: expected 5 keypoints, got {len(kps)}")
+    return check(
+        "All faces have keypoints list of length 5",
+        all_ok,
+    )
+
+
+def check_keypoints_normalized(faces: list) -> bool:
+    NAMES = ["left_eye", "right_eye", "nose_tip", "left_mouth", "right_mouth"]
+    all_ok = True
+    for i, face in enumerate(faces):
+        kps = face.get("keypoints", [])
+        for k, point in enumerate(kps):
+            if not isinstance(point, (list, tuple)) or len(point) != 2:
+                all_ok = False
+                print(f"    Face {i} kp[{k}]: expected (x, y) pair, got {point}")
+                continue
+            x, y = point
+            if not (0.0 <= x <= 1.0):
+                all_ok = False
+                print(f"    Face {i} kp[{k}] {NAMES[k]}: x={x:.6f} outside [0, 1]")
+            if not (0.0 <= y <= 1.0):
+                all_ok = False
+                print(f"    Face {i} kp[{k}] {NAMES[k]}: y={y:.6f} outside [0, 1]")
+    return check(
+        "All keypoint coordinates normalized in [0, 1]",
+        all_ok,
+    )
+
+
+def check_keypoints_inside_bbox(faces: list) -> bool:
+    """
+    Landmarks should roughly sit inside or very near the face bbox.
+    Uses a small tolerance since keypoints near the face boundary
+    can legitimately fall slightly outside.
+    """
+    NAMES = ["left_eye", "right_eye", "nose_tip", "left_mouth", "right_mouth"]
+    TOLERANCE = 0.05
+    all_ok = True
+    for i, face in enumerate(faces):
+        bbox = face.get("bbox", {})
+        x, y = bbox.get("x", 0), bbox.get("y", 0)
+        w, h = bbox.get("w", 0), bbox.get("h", 0)
+        kps = face.get("keypoints", [])
+        for k, point in enumerate(kps):
+            if not isinstance(point, (list, tuple)) or len(point) != 2:
+                continue
+            kx, ky = point
+            in_x = (x - TOLERANCE) <= kx <= (x + w + TOLERANCE)
+            in_y = (y - TOLERANCE) <= ky <= (y + h + TOLERANCE)
+            if not (in_x and in_y):
+                all_ok = False
+                print(
+                    f"    Face {i} kp[{k}] {NAMES[k]}: "
+                    f"({kx:.4f}, {ky:.4f}) far outside "
+                    f"bbox ({x:.4f}, {y:.4f}, {w:.4f}, {h:.4f})"
+                )
+    return check(
+        "All keypoints within bbox bounds (±0.05 tolerance)",
+        all_ok,
+    )
+
+
 def check_empty_on_no_face() -> bool:
     """
     Sends a plain white 100x100 image — should return 0 faces, not crash.
@@ -257,6 +332,9 @@ def check_multi_face(image_path: Path) -> bool:
         check_bbox_no_overflow(faces),
         check_confidence(faces),
         check_crop_dimensions(faces),
+        check_keypoints_present(faces),
+        check_keypoints_normalized(faces),
+        check_keypoints_inside_bbox(faces),
     ]
 
     if count > 1:
@@ -276,6 +354,7 @@ def check_multi_face(image_path: Path) -> bool:
 # ------------------------------------------------------------------
 
 def print_faces(data: dict) -> None:
+    NAMES = ["L.eye", "R.eye", "Nose", "L.mouth", "R.mouth"]
     separator("Detected faces detail")
     faces = data.get("faces", [])
     if not faces:
@@ -290,6 +369,13 @@ def print_faces(data: dict) -> None:
             f"  conf={face['detection_confidence']:.4f}"
             f"  crop=({face['crop_width']}x{face['crop_height']})"
         )
+        kps = face.get("keypoints", [])
+        if kps:
+            kp_str = "  Keypoints: " + "  ".join(
+                f"{NAMES[k]}=({kps[k][0]:.4f},{kps[k][1]:.4f})"
+                for k in range(len(kps))
+            )
+            print(f"  {kp_str}")
 
 
 # ------------------------------------------------------------------
@@ -329,18 +415,21 @@ def main() -> int:
     faces = data.get("faces", [])
 
     results = {
-        "http_200":            check_status(r),
-        "response_shape":      check_response_shape(data),
-        "image_dimensions":    check_image_dimensions(data),
-        "at_least_one_face":   check_at_least_one_face(data),
-        "bbox_keys":           check_bbox_keys(faces),
-        "bbox_normalized":     check_bbox_normalized(faces),
-        "bbox_no_overflow":    check_bbox_no_overflow(faces),
-        "confidence_range":    check_confidence(faces),
-        "confidence_type":     check_confidence_type(faces),
-        "crop_dimensions":     check_crop_dimensions(faces),
-        "blank_image":         check_empty_on_no_face(),
-        "invalid_file":        check_invalid_file(),
+        "http_200":                check_status(r),
+        "response_shape":          check_response_shape(data),
+        "image_dimensions":        check_image_dimensions(data),
+        "at_least_one_face":       check_at_least_one_face(data),
+        "bbox_keys":               check_bbox_keys(faces),
+        "bbox_normalized":         check_bbox_normalized(faces),
+        "bbox_no_overflow":        check_bbox_no_overflow(faces),
+        "confidence_range":        check_confidence(faces),
+        "confidence_type":         check_confidence_type(faces),
+        "crop_dimensions":         check_crop_dimensions(faces),
+        "keypoints_present":       check_keypoints_present(faces),
+        "keypoints_normalized":    check_keypoints_normalized(faces),
+        "keypoints_inside_bbox":   check_keypoints_inside_bbox(faces),
+        "blank_image":             check_empty_on_no_face(),
+        "invalid_file":            check_invalid_file(),
     }
 
     print_faces(data)

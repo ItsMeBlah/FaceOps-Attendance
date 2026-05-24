@@ -33,7 +33,8 @@ class FaceDetectionService(BaseService):
         )
         # Minimum score for a detection to be kept before NMS
         self.confidence_threshold = confidence_threshold
-        # IoU threshold for NMS 
+        # IoU threshold for NMS — how much two boxes can overlap before
+        # one gets suppressed
         self.nms_threshold = nms_threshold
 
         # SCRFD operates on a fixed 640x640 input
@@ -113,14 +114,16 @@ class FaceDetectionService(BaseService):
         #  kps_s8, kps_s16, kps_s32]
         # 9 outputs total, first 3 are scores, next 3 are bboxes, last 3 are kps
         num_strides = len(self.STRIDES)
-        score_outputs = output_values[0:num_strides]            # sigmoid scores
+        score_outputs = output_values[0:num_strides]              # sigmoid scores
         bbox_outputs  = output_values[num_strides:num_strides*2]  # ltrb deltas
-        # kps_outputs = output_values[num_strides*2:]           # not used here
+        kps_outputs   = output_values[num_strides*2:]             # 5 keypoints per anchor
 
         all_detections: list[dict] = []
 
-        for stride, scores, bboxes in zip(self.STRIDES, score_outputs, bbox_outputs):
-            detections = self._decode_stride(stride, scores, bboxes)
+        for stride, scores, bboxes, kps in zip(
+            self.STRIDES, score_outputs, bbox_outputs, kps_outputs
+        ):
+            detections = self._decode_stride(stride, scores, bboxes, kps)
             all_detections.extend(detections)
 
         if not all_detections:
@@ -134,12 +137,27 @@ class FaceDetectionService(BaseService):
         stride: int,
         scores: np.ndarray,
         bboxes: np.ndarray,
+        kps: np.ndarray,
     ) -> list[dict]:
         """
-        Decode one stride's score + bbox tensors into pixel-space boxes.
+        Decode one stride's score + bbox + keypoint tensors into pixel-space detections.
 
-        scores shape: (1, H*W*num_anchors, 1)  — sigmoid probabilities
-        bboxes shape: (1, H*W*num_anchors, 4)  — ltrb distances in stride units
+        scores shape: (1, H*W*num_anchors, 1)   — sigmoid probabilities
+        bboxes shape: (1, H*W*num_anchors, 4)   — ltrb distances in stride units
+        kps    shape: (1, H*W*num_anchors, 10)  — 5 keypoints as (dx, dy) pairs
+                                                   relative to anchor center,
+                                                   scaled by stride
+
+        The 5 keypoints in order (InsightFace convention):
+            0 — left eye
+            1 — right eye
+            2 — nose tip
+            3 — left mouth corner
+            4 — right mouth corner
+
+        Each keypoint is decoded as:
+            kp_x = anchor_x + dx * stride
+            kp_y = anchor_y + dy * stride
 
         SCRFD uses the FCOS-style anchor-free representation:
         - Each spatial location has an anchor point at its grid center
@@ -162,6 +180,7 @@ class FaceDetectionService(BaseService):
         # Remove batch dimension, flatten if needed
         scores = scores.reshape(-1)          # (N,)
         bboxes = bboxes.reshape(-1, 4)       # (N, 4) — ltrb
+        kps    = kps.reshape(-1, 10)         # (N, 10) — 5 x (dx, dy)
 
         # Filter by confidence threshold
         keep = scores >= self.confidence_threshold
@@ -170,26 +189,48 @@ class FaceDetectionService(BaseService):
 
         scores  = scores[keep]
         bboxes  = bboxes[keep]
+        kps     = kps[keep]
         anchors = anchors[keep]
 
-        # Decode: distances from anchor → pixel x1y1x2y2
+        # Decode bbox: distances from anchor → pixel x1y1x2y2
         x1 = anchors[:, 0] - bboxes[:, 0] * stride
         y1 = anchors[:, 1] - bboxes[:, 1] * stride
         x2 = anchors[:, 0] + bboxes[:, 2] * stride
         y2 = anchors[:, 1] + bboxes[:, 3] * stride
 
-        # Clip to image bounds (640x640)
+        # Clip bbox to image bounds (640x640)
         x1 = np.clip(x1, 0, self.INPUT_SIZE[0])
         y1 = np.clip(y1, 0, self.INPUT_SIZE[1])
         x2 = np.clip(x2, 0, self.INPUT_SIZE[0])
         y2 = np.clip(y2, 0, self.INPUT_SIZE[1])
 
+        # Decode keypoints: anchor + offset * stride → pixel (kx, ky)
+        # kps columns: [dx0, dy0, dx1, dy1, dx2, dy2, dx3, dy3, dx4, dy4]
+        # anchor_x repeated across odd columns, anchor_y across even columns
+        kps_decoded = np.zeros_like(kps)   # (N, 10)
+        for k in range(5):
+            kps_decoded[:, k * 2]     = anchors[:, 0] + kps[:, k * 2]     * stride
+            kps_decoded[:, k * 2 + 1] = anchors[:, 1] + kps[:, k * 2 + 1] * stride
+
+        # Clip keypoints to image bounds
+        kps_decoded[:, 0::2] = np.clip(kps_decoded[:, 0::2], 0, self.INPUT_SIZE[0])
+        kps_decoded[:, 1::2] = np.clip(kps_decoded[:, 1::2], 0, self.INPUT_SIZE[1])
+
         detections = []
         for i in range(len(scores)):
+            # Reshape keypoints into list of 5 (x, y) pairs — still in 640x640 space
+            kp_pairs = [
+                (float(kps_decoded[i, k * 2]), float(kps_decoded[i, k * 2 + 1]))
+                for k in range(5)
+            ]
             detections.append({
                 "bbox_pixels": (float(x1[i]), float(y1[i]),
                                 float(x2[i]), float(y2[i])),
-                "confidence": float(scores[i]),
+                "confidence":  float(scores[i]),
+                "keypoints_pixels": kp_pairs,
+                # kp_pairs index meaning:
+                # 0 = left eye, 1 = right eye, 2 = nose tip,
+                # 3 = left mouth corner, 4 = right mouth corner
             })
         return detections
 
@@ -228,6 +269,8 @@ class FaceDetectionService(BaseService):
         (Intersection over Union):
             IoU = area of overlap / area of union
         If IoU > nms_threshold, the lower-confidence box is suppressed.
+        Keypoints are carried through unchanged — the kept box's keypoints
+        are the ones that survive.
         """
         if not detections:
             return []
@@ -268,24 +311,93 @@ class FaceDetectionService(BaseService):
     # Public API
     # ------------------------------------------------------------------
 
-	def detect(self, image: Image.Image) -> list[dict]:
-		"""
-		Output per face:
-		  {
-		    "bbox":       (x, y, w, h),  # normalised [0, 1] coordinates
-		    "confidence": float,          # detection score 0.0 – 1.0
-		    "crop":       Image.Image     # cropped face region
-		  }
-		"""
+    def detect(self, image: Image.Image) -> list[dict]:
+        """
+        Run face detection on a full PIL image.
 
-		# this is a dummy implementation; replace with actual model inference but follow the same output format
-		# WARNING: Must use crop_faces util to ensure the crop coordinates are consistent with the dummy bbox format, otherwise downstream models will break when we switch to real face detection outputs
-		box = (0.3, 0.3, 0.4, 0.4)
-		crops = crop_faces(image, [box], resize=(512, 512))
-		return [
-			{
-				"bbox": box,
-				"confidence": 0.6,
-				"crop": crops[0],
-			}
-		]
+        Output per face:
+          {
+            "bbox":       (x, y, w, h),      # normalized [0, 1] — x,y = top-left
+            "confidence": float,              # detection score 0.0 – 1.0
+            "crop":       PIL.Image.Image,    # face region cropped from original
+            "keypoints":  [                   # 5 facial landmarks, normalized [0, 1]
+                (x, y),  # 0 — left eye
+                (x, y),  # 1 — right eye
+                (x, y),  # 2 — nose tip
+                (x, y),  # 3 — left mouth corner
+                (x, y),  # 4 — right mouth corner
+            ]
+          }
+
+        Returns an empty list when no faces are found.
+        """
+        img_w, img_h = image.size
+
+        # Convert to numpy uint8 RGB for BaseService
+        img_np = np.asarray(image.convert("RGB"), dtype=np.uint8)
+
+        self._ensure_loaded()
+
+        # preprocess → infer → postprocess
+        # postprocess returns pixel-space (x1,y1,x2,y2) and keypoints in 640x640 space
+        input_tensors = self.preprocess(img_np)
+        raw_outputs   = self._infer(input_tensors)
+        detections    = self.postprocess(raw_outputs)
+
+        if not detections:
+            return []
+
+        results: list[dict] = []
+        bboxes_normalized: list[tuple] = []
+
+        for det in detections:
+            x1, y1, x2, y2 = det["bbox_pixels"]
+
+            # The model ran on a 640x640 resized image.
+            # Scale the pixel coords back to the original image dimensions.
+            x1_orig = x1 / self.INPUT_SIZE[0] * img_w
+            y1_orig = y1 / self.INPUT_SIZE[1] * img_h
+            x2_orig = x2 / self.INPUT_SIZE[0] * img_w
+            y2_orig = y2 / self.INPUT_SIZE[1] * img_h
+
+            # Convert (x1,y1,x2,y2) pixel → (x,y,w,h) normalized [0,1]
+            # x,y is the top-left corner normalized by image dimensions
+            x_norm = x1_orig / img_w
+            y_norm = y1_orig / img_h
+            w_norm = (x2_orig - x1_orig) / img_w
+            h_norm = (y2_orig - y1_orig) / img_h
+
+            # Clamp to [0, 1] — model occasionally predicts slightly outside bounds
+            x_norm = float(np.clip(x_norm, 0.0, 1.0))
+            y_norm = float(np.clip(y_norm, 0.0, 1.0))
+            w_norm = float(np.clip(w_norm, 0.0, 1.0 - x_norm))
+            h_norm = float(np.clip(h_norm, 0.0, 1.0 - y_norm))
+
+            bboxes_normalized.append((x_norm, y_norm, w_norm, h_norm))
+
+        # Use the shared crop_faces utility — MUST use this, not custom cropping,
+        # so that every downstream service (liveness, emotion, verification)
+        # gets crops from exactly the same coordinate math.
+        crops = crop_faces(image, bboxes_normalized)
+
+        for bbox, det, crop in zip(bboxes_normalized, detections, crops):
+            # Scale keypoints from 640x640 space back to original image,
+            # then normalize to [0, 1] by dividing by original dimensions.
+            # Follows the same scale-then-normalize logic as bboxes above.
+            raw_kps = det["keypoints_pixels"]
+            keypoints_normalized = [
+                (
+                    float(np.clip(kx / self.INPUT_SIZE[0] * img_w / img_w, 0.0, 1.0)),
+                    float(np.clip(ky / self.INPUT_SIZE[1] * img_h / img_h, 0.0, 1.0)),
+                )
+                for kx, ky in raw_kps
+            ]
+
+            results.append({
+                "bbox":       bbox,
+                "confidence": det["confidence"],
+                "crop":       crop,
+                "keypoints":  keypoints_normalized,
+            })
+
+        return results
