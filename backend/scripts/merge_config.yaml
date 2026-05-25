@@ -14,18 +14,6 @@ targets:
   # ── Anti-spoofing (LCC_FASD) ─────────────────────────────────────────────
   # root = directory that CONTAINS the LCC_FASD_* split folders, e.g.:
   #   C:/path/to/LCC_FASD
-  #
-  # On disk:
-  #   LCC_FASD/
-  #     LCC_FASD_training/      ← split: training
-  #       real/
-  #       spoof/
-  #     LCC_FASD_development/  ← split: development
-  #       real/
-  #       spoof/
-  #     LCC_FASD_evaluation/   ← split: evaluation
-  #       real/
-  #       spoof/
   anti_spoofing:
     enabled: false
     root: ""
@@ -36,16 +24,6 @@ targets:
   # ── Emotion FER2013 ────────────────────────────────────────────────────────
   # root = parent of train/ and test/, e.g.:
   #   training_module/emotion_module/fer/fer2013
-  #
-  # On disk:
-  #   fer2013/
-  #     train/
-  #       angry/
-  #       happy/
-  #       ...
-  #     test/
-  #       angry/
-  #       ...
   emotion_fer:
     enabled: false
     root: ""
@@ -56,15 +34,6 @@ targets:
   # ── Emotion AffectNet ──────────────────────────────────────────────────────
   # root = parent of Train/ and Test/, e.g.:
   #   training_module/emotion_module/affectnet/AffectNet
-  #
-  # On disk:
-  #   AffectNet/
-  #     Train/
-  #       anger/
-  #       happy/
-  #       ...
-  #     Test/
-  #       ...
   emotion_affectnet:
     enabled: false
     root: ""
@@ -72,12 +41,39 @@ targets:
     label_from: emotion
     min_confidence: 0.85
 
-  # ── Face recognition (optional) ────────────────────────────────────────────
-  # root = classification_data (contains train_data/, val_data/, test_data/)
+  # ── Face recognition (ResNet18 / ArcFace) ─────────────────────────────────
+  # Used by: training_module/face_recognition_module/train_resnet18.py
+  #
+  # root = classification_data or classification_data_aligned (recommended if
+  #        you run dataset_align.py before training — matches trainer default).
+  # Example:
+  #   training_module/face_recognition_module/dataset/11-785-fall-20-homework-2-part-2/classification_data_aligned
+  #
+  # On disk (ImageFolder per split):
+  #   <root>/
+  #     train_data/<person_id>/*.jpg   ← split: train  (usual target for new captures)
+  #     val_data/<person_id>/*.jpg     ← split: val
+  #     test_data/<person_id>/*.jpg    ← split: test
+  #
+  # Merge reads from capture JSON:
+  #   faces[].recognition.label      → folder name (= person_id from /register, case preserved)
+  #   faces[].recognition.confidence → similarity score (must be >= min_confidence)
+  #   faces[].recognition.matched    → must be true if only_matched is true
+  #
+  # Folder names must match how people were enrolled in the app AND existing
+  # train_data/<class_name>/ folders (ImageFolder uses directory names as classes).
+  #
+  # Crops are bbox crops (same as pipeline). Trainer default data_root is
+  # classification_data_aligned — run dataset_align.py on new images if you train
+  # on aligned data, or set root to classification_data and align the whole tree.
+  #
+  # Output file per face:
+  #   <root>/train_data/<person_id>/capture_<stamp>_face0.jpg
   face_recognition:
     enabled: false
     root: ""
     split: train
     label_from: recognition
     only_matched: true
+    require_live: true
     min_confidence: 0.90

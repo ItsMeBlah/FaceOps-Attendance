@@ -8,13 +8,20 @@ Workflow:
      - Crop using the normalized bbox.
      - For each enabled target, read the predicted label + confidence.
      - If confidence >= min_confidence, copy the crop into paths from merge_config.yaml:
-         emotion:  <root>/<split>/<emotion>/capture_...jpg
-         liveness: <root>/<LCC_split>/real|spoof/capture_...jpg
-         recognition: <root>/train_data/<person>/capture_...jpg
+         emotion:          <root>/<train|test>/<emotion>/capture_...jpg
+         liveness:         <root>/LCC_FASD_<split>/real|spoof/capture_...jpg
+         face_recognition: <root>/<train_data|val_data|test_data>/<person>/capture_...jpg
+
+Face recognition (ResNet18 / ArcFace training):
+  - Reads faces[].recognition from capture JSON (label = enrolled name, confidence = similarity).
+  - Appends crops under classification_data layout used by train_resnet18.py / resnet18_training/data.py.
+  - Typical root: .../classification_data_aligned  (or classification_data if not using alignment).
+  - Set only_matched: true to skip unknown faces; require_live: true to skip spoof-labelled faces.
 
 Examples:
   - anti_spoofing spoof @ 0.92, split training -> <LCC_FASD>/LCC_FASD_training/spoof/...
   - emotion happy @ 0.88, split train -> <fer2013>/train/happy/...
+  - recognition alice @ 0.91, split train -> <root>/train_data/alice/capture_..._face0.jpg
   - below threshold                 -> skipped (not appended)
 
 Run from repo root:
@@ -40,8 +47,11 @@ DEFAULT_REPO_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_CONFIG = SCRIPT_DIR / "merge_config.yaml"
 DEFAULT_MANIFEST = SCRIPT_DIR / ".merge_manifest.json"
 
-# Face recognition (classification_data)
+# Face recognition — matches resnet18_training/data.py SPLIT_DIRS
+# root = classification_data or classification_data_aligned (parent of train_data/, val_data/, test_data/)
 FACE_RECOGNITION_SPLITS = {"train": "train_data", "val": "val_data", "test": "test_data"}
+
+FACE_RECOGNITION_TARGET = "face_recognition"
 
 # LCC_FASD: root points at the LCC_FASD directory (parent of LCC_FASD_* folders)
 LCC_FASD_SPLITS = {
@@ -131,10 +141,28 @@ def save_manifest(path: Path, ingested: set[str]) -> None:
 
 
 def sanitize_label(label: str) -> str:
+    """Emotion / liveness folder names (lowercase, safe characters)."""
     cleaned = re.sub(r"[^\w\-.]+", "_", label.strip().lower())
     cleaned = cleaned.strip("._")
     if not cleaned:
         raise ValueError("empty label after sanitization")
+    return cleaned
+
+
+def sanitize_person_folder(person_id: str) -> str:
+    """
+    Face-recognition class folder name — must match registration person_id.
+
+    Registration stores person_id exactly as sent from the UI (e.g. "Alice").
+    Pipeline JSON uses recognition.label = that same string when matched.
+    We only remove path-unsafe characters; we do NOT lowercase, so folders stay
+    consistent with train_resnet18 ImageFolder class names on disk.
+    """
+    cleaned = person_id.strip()
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", cleaned)
+    cleaned = cleaned.strip(" .")
+    if not cleaned:
+        raise ValueError("empty person_id after sanitization")
     return cleaned
 
 
@@ -169,6 +197,10 @@ def read_prediction(target_name: str, target: dict[str, Any], face: dict[str, An
         confidence = 0.0
 
     if source == "recognition":
+        if target_name == FACE_RECOGNITION_TARGET and target.get("require_live"):
+            liveness = face.get("anti_spoofing") or {}
+            if str(liveness.get("label", "")).lower() != "real":
+                return None
         if target.get("only_matched") and not face.get("recognition", {}).get("matched"):
             return None
         if not raw_label or str(raw_label).lower() == "unknown":
@@ -183,6 +215,12 @@ def read_prediction(target_name: str, target: dict[str, Any], face: dict[str, An
     if not raw_label:
         return None
 
+    if source == "recognition" and target_name == FACE_RECOGNITION_TARGET:
+        return Prediction(
+            label=sanitize_person_folder(str(raw_label)),
+            confidence=confidence,
+        )
+
     return Prediction(label=sanitize_label(str(raw_label)), confidence=confidence)
 
 
@@ -193,7 +231,7 @@ def _split_subdirectory(target_name: str, target: dict[str, Any]) -> str:
 
     split = str(target.get("split", "train")).strip().lower()
 
-    if target_name == "face_recognition":
+    if target_name == FACE_RECOGNITION_TARGET:
         subdir = FACE_RECOGNITION_SPLITS.get(split)
         if not subdir:
             raise ValueError(
@@ -229,6 +267,34 @@ def _split_subdirectory(target_name: str, target: dict[str, Any]) -> str:
     raise ValueError(f"Unknown target {target_name!r} — cannot resolve split folder")
 
 
+def face_recognition_route(
+    target: dict[str, Any],
+    repo_root: Path,
+    person_label: str,
+) -> Path:
+    """
+    Build the folder where a face-recognition training image is stored.
+
+    Path pattern:
+      <root>/<split_dir>/<person_id>/capture_<stamp>_face<N>.jpg
+
+    Where:
+      - root      = targets.face_recognition.root (classification_data[_aligned])
+      - split_dir = train_data | val_data | test_data  (from targets.face_recognition.split)
+      - person_id = sanitized recognition.label from pipeline JSON (enrolled person's name)
+
+    train_resnet18.py loads images via ImageFolder from:
+      Path(data_root) / train_data / <class_name> /
+    """
+    root = resolve_path(
+        repo_root,
+        str(target.get("root", "")),
+        f"targets.{FACE_RECOGNITION_TARGET}.root",
+    )
+    split_dir = _split_subdirectory(FACE_RECOGNITION_TARGET, target)
+    return root / split_dir / person_label
+
+
 def destination_dir(
     target_name: str,
     target: dict[str, Any],
@@ -239,13 +305,54 @@ def destination_dir(
     All paths come from merge_config.yaml `root` + `split` (+ class label).
 
     Layouts:
-      emotion:       <root>/<train|test>/<emotion>/
-      anti_spoofing: <root>/LCC_FASD_<split>/real|spoof/
-      face_recognition: <root>/train_data/<person>/
+      emotion:          <root>/<train|test>/<emotion>/
+      anti_spoofing:    <root>/LCC_FASD_<split>/real|spoof/
+      face_recognition: <root>/train_data/<person>/  (see face_recognition_route)
     """
+    if target_name == FACE_RECOGNITION_TARGET:
+        return face_recognition_route(target, repo_root, class_label)
+
     root = resolve_path(repo_root, str(target.get("root", "")), f"targets.{target_name}.root")
     split_dir = _split_subdirectory(target_name, target)
     return root / split_dir / class_label
+
+
+def format_target_routes(config: dict[str, Any], repo_root: Path) -> list[str]:
+    """Human-readable summary of where each enabled target writes files."""
+    lines: list[str] = []
+    for target_name, target in collect_enabled_targets(config):
+        root_raw = str(target.get("root", "") or "").strip()
+        if not root_raw:
+            lines.append(f"  {target_name}: (root not set in merge_config.yaml)")
+            continue
+        try:
+            root = resolve_path(repo_root, root_raw, f"targets.{target_name}.root")
+        except ValueError:
+            lines.append(f"  {target_name}: (invalid root)")
+            continue
+
+        split = str(target.get("split", "train"))
+        if target_name == FACE_RECOGNITION_TARGET:
+            split_dir = _split_subdirectory(target_name, target)
+            example = root / split_dir / "<person_id>" / "capture_<stamp>_face0.jpg"
+            lines.append(f"  {target_name}:")
+            lines.append(f"    root:  {root}")
+            lines.append(f"    split: {split} -> {split_dir}/")
+            lines.append(f"    path:  {example}")
+            lines.append("    label: faces[].recognition.label (person name), confidence = similarity")
+            if target.get("only_matched"):
+                lines.append("    gate:  only when recognition.matched is true")
+            if target.get("require_live"):
+                lines.append("    gate:  only when anti_spoofing.label is real")
+        elif target_name == "anti_spoofing":
+            split_dir = _split_subdirectory(target_name, target)
+            example = root / split_dir / "<real|spoof>" / "capture_<stamp>_face0.jpg"
+            lines.append(f"  {target_name}: {example}")
+        else:
+            split_dir = _split_subdirectory(target_name, target)
+            example = root / split_dir / "<class>" / "capture_<stamp>_face0.jpg"
+            lines.append(f"  {target_name}: {example}")
+    return lines
 
 
 def list_capture_stamps(captures_dir: Path) -> list[str]:
@@ -384,6 +491,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Manifest:         {manifest_path}")
     print(f"Default min conf: {float(config.get('min_confidence', 0.0)):.3f}")
     print(f"Enabled targets:  {', '.join(n for n, _ in enabled_targets)}")
+    route_lines = format_target_routes(config, repo_root)
+    if route_lines:
+        print("Write routes:")
+        for line in route_lines:
+            print(line)
     if args.dry_run:
         print("Mode:             dry-run")
 
