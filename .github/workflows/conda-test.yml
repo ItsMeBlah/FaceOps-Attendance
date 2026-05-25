@@ -1,0 +1,28 @@
+name: Conda Self-Hosted Runner Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-conda:
+    runs-on: self-hosted
+
+    steps:
+      - name: Check basic environment
+        run: |
+          echo "=== WHO AM I ==="
+          whoami
+          echo "=== Current Directory ==="
+          pwd
+          echo "=== List Current Directory ==="
+          ls
+          echo "=== PATH ==="
+          echo $PATH
+
+      - name: Try conda directly (NO activation)
+        run: |
+          echo "=== CONDA VERSION ==="
+          conda --version
+
+          echo "=== CONDA ENV LIST ==="
+          conda env list
