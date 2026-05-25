@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import csv
+from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -31,8 +32,10 @@ LR_TUNED = 1e-4
 SAVE_PATH = "emotion.pth"
 METRICS_PATH = "metrics/test_metrics.txt"
 HISTORY_CSV_PATH = "metrics/training_history.csv"
+METRICS_DIR = Path("metrics")
 
 print(f"Using device: {DEVICE}")
+METRICS_DIR.mkdir(parents=True, exist_ok=True)
 
 NORM_MEAN, NORM_STD = get_mobilenet_norm_stats()
 print(f"MobileNetV2 normalize mean: {NORM_MEAN}")
