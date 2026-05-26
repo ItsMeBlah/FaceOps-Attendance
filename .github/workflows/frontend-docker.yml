@@ -1,0 +1,24 @@
+name: Frontend Docker Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build frontend image
+        run: |
+          docker build -t faceguard-frontend:latest ./frontend
+
+      - name: Stop existing container (if any)
+        run: |
+          docker rm -f faceguard-frontend || true
+
+      - name: Run frontend container
+        run: |
+          docker run -d --name faceguard-frontend --restart unless-stopped -p 8080:8080 faceguard-frontend:latest
