@@ -43,7 +43,7 @@ IMG_SHAPE = IMG_SIZE + (3,)
 BATCH_SIZE = 32
 INITIAL_EPOCHS = 15
 FINE_TUNE_EPOCHS = 15
-FINE_TUNE_AT = 54
+FINE_TUNE_AT = 0
 
 BASE_LR = 5e-5
 FINE_TUNE_LR = 5e-5
@@ -335,7 +335,6 @@ def evaluate_and_save_outputs(model, train_ds, val_ds, test_ds) -> None:
 
     y_true = np.concatenate([labels.numpy() for _, labels in test_ds])
     y_pred_probs = model.predict(test_ds)
-    # Softmax outputs shape (n_samples, 2) — take the class index, don't .ravel().
     y_pred = np.argmax(y_pred_probs, axis=1)
 
     class_names = train_ds.class_names
