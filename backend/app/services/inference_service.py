@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class InferenceService:
     def __init__(
         self,
-        liveness_threshold: float = 0.95,
+        liveness_threshold: float = 0.99,
         verification_threshold: float = 0.3,
         use_triton: bool | None = None,
         triton_url: str | None = None,
@@ -100,7 +100,7 @@ class InferenceService:
         live_verification_crops = [verification_crops[i] for i in live_idx]
 
         # Batch verification on live faces only
-        # live_results = [face_results[i] for i in live_idx]
+        live_results = [face_results[i] for i in live_idx]
         # live_results = self.run_verification_batch(live_crops, live_results)
         live_results = self.run_verification_batch(live_verification_crops, live_results)
 
