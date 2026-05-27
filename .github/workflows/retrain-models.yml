@@ -9,8 +9,10 @@ jobs:
     env:
       SPOOF_CONDA_ENV: "tensorflow_spoof"
       EMOTION_CONDA_ENV: "emotion_detection"
+      RECOGNITION_CONDA_ENV: "recognition"
       SPOOF_DATASET_DEST: "training_module/anti_spoofing_module_MobileNetV2"
       EMOTION_DATASET_DEST: "training_module/emotion_module/affectnet/AffectNet"
+      RECOGNITION_DATASET_DEST: "training_module/face_recognition_module/dataset/11-785-fall-20-homework-2-part-2/classification_data_aligned"
       WEIGHTS_DIR: "backend/weights"
     steps:
       - name: Checkout
@@ -22,6 +24,8 @@ jobs:
           set -euo pipefail
           SPOOF_DATASET_SRC="$HOME/Desktop/Datasets/LCC_FASD"
           EMOTION_DATASET_SRC="$HOME/Desktop/Datasets/emotion/AffectNet"
+          RECOGNITION_DATASET_SRC="$HOME/Desktop/Datasets/recognition/classification_data_aligned"
+          RECOGNITION_DATASET_PRETRAINED_BACKBONE="$HOME/Desktop/Datasets/recognition/resnet18_110.pth"
 
           if [ ! -d "$SPOOF_DATASET_SRC" ]; then
             echo "Missing spoof dataset: $SPOOF_DATASET_SRC" >&2
@@ -31,10 +35,14 @@ jobs:
             echo "Missing emotion dataset: $EMOTION_DATASET_SRC" >&2
             exit 1
           fi
-
-          mkdir -p "$SPOOF_DATASET_DEST" "$EMOTION_DATASET_DEST"
+          if [ ! -d "$RECOGNITION_DATASET_SRC" ]; then
+            echo "Missing recognition dataset: $RECOGNITION_DATASET_SRC" >&2
+            exit 1
+          fi
+          mkdir -p "$SPOOF_DATASET_DEST" "$EMOTION_DATASET_DEST" "$RECOGNITION_DATASET_DEST"
           cp -a "$SPOOF_DATASET_SRC" "$SPOOF_DATASET_DEST/"
           cp -a "$EMOTION_DATASET_SRC"/* "$EMOTION_DATASET_DEST/"
+          cp -a "$RECOGNITION_DATASET_SRC"/* "$RECOGNITION_DATASET_DEST/"
 
       - name: Train anti-spoofing model
         shell: bash
@@ -70,3 +78,26 @@ jobs:
           set -euo pipefail
           mkdir -p "$WEIGHTS_DIR"
           cp -f training_module/emotion_module/affectnet/emotion.onnx "$WEIGHTS_DIR/emotion.onnx"
+
+      - name: Train recognition model
+        shell: bash
+        working-directory: training_module/face_recognition_module
+        run: |
+          set -euo pipefail
+          source "$(conda info --base)/etc/profile.d/conda.sh"
+          conda activate "$RECOGNITION_CONDA_ENV"
+          python train_resnet18.py --pretrained-backbone "$RECOGNITION_DATASET_PRETRAINED_BACKBONE" --output-dir checkpoints_resnet18/train_3 --freeze-backbone 3 --optimizer adamw --scheduler cosine --lr 0.005 --epochs 50 --batch-size 64 --dropout 0.5 --loss focal --head arcface --resize-size 0 --amp > train.log
+          python export_onnx.py --device cuda
+
+      - name: Publish recognition weights
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$WEIGHTS_DIR"
+          cp -f training_module/face_recognition_module/checkpoints_resnet18/train_3/resnet18_face.onnx "$WEIGHTS_DIR/resnet18_face.onnx"
+
+      - name: Build and run Docker container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
