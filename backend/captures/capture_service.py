@@ -1,33 +1,42 @@
 import json
 import time
 from datetime import datetime
-from typing import Any
 
 from app.config import settings
 
-MIN_INTERVAL_SECONDS = 10  # 0 = save on every eligible request
-ONLY_IF_FACES = True
+# ---------------------------------------------------------------------------
+# SETTINGS
+# ---------------------------------------------------------------------------
 
-_last_save_at = 0.0
+min_interval_secs = 10
+only_if_faces = True
 
+last_save_at = 0.0
 
-def save(image_bytes: bytes, payload: dict[str, Any]) -> None:
+def save(image_bytes, payload):
+    global last_save_at
+
     if not settings.captures_enabled:
         return
-    if ONLY_IF_FACES and not payload.get("faces"):
+
+    if only_if_faces and not payload.get("faces"):
+        return
+    
+    current_time = time.monotonic()
+
+    if min_interval_secs and current_time - last_save_at < min_interval_secs:
         return
 
-    global _last_save_at
-    now = time.monotonic()
-    if MIN_INTERVAL_SECONDS and now - _last_save_at < MIN_INTERVAL_SECONDS:
-        return
-    _last_save_at = now
+    last_save_at = current_time
 
-    out_dir = settings.captures_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    (out_dir / f"{stamp}_frame.jpg").write_bytes(image_bytes)
-    (out_dir / f"{stamp}_predictions.json").write_text(
-        json.dumps(payload, indent=2),
-        encoding="utf-8",
-    )
+    output_dir = settings.captures_dir
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+    image_path = output_dir / f"{timestamp}.jpg"
+    json_path = output_dir / f"{timestamp}.json"
+
+    image_path.write_bytes(image_bytes)
+
+    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    

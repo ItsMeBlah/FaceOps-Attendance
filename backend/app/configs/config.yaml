@@ -12,7 +12,6 @@ models:
 captures:
   enabled: true
   dir: captures/screenshots
-  dir: captures
 
 qdrant:
   url: http://localhost:6333
