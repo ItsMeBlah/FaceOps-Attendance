@@ -116,7 +116,7 @@ export default function DiagnosticsView({ camera, onRegistryChange }) {
     return () => cancelAnimationFrame(raf);
   }, [camera.active, drawOverlay]);
 
-  // Capture helpers
+  // Capture helpers 
   const getFullFrame = useCallback(async () => {
     const v = camera.videoRef.current;
     if (!v) throw new Error('Camera not ready');
@@ -131,6 +131,29 @@ export default function DiagnosticsView({ camera, onRegistryChange }) {
     return blob;
   }, [camera.videoRef]);
 
+  // Verify expects a 128x128 input — resize the crop to match.
+  // Without keypoint-based alignment the similarity score isn't meaningful,
+  // but this satisfies the backend's dimension check so the endpoint
+  // returns a response instead of 400.
+  const get128Crop = useCallback(async () => {
+    const v = camera.videoRef.current;
+    if (!v) throw new Error('Camera not ready');
+    const { dataUrl, pixelBox: pb } = await cropToBlob(v);
+    setLastCropPreview({ dataUrl, pixelBox: pb });
+
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = dataUrl;
+    });
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 128;
+    c.getContext('2d').drawImage(img, 0, 0, 128, 128);
+    return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.9));
+  }, [camera.videoRef]);
+
   const requireCam = () => {
     if (!camera.active) {
       return { ok: false, status: 0, latency: 0, error: 'Start the camera first.' };
@@ -138,7 +161,7 @@ export default function DiagnosticsView({ camera, onRegistryChange }) {
     return null;
   };
 
-  // Endpoint runners
+  // Endpoint runners 
   const runPipeline = async () => {
     const e = requireCam(); if (e) return e;
     return postPipeline(await getFullFrame());
@@ -155,16 +178,17 @@ export default function DiagnosticsView({ camera, onRegistryChange }) {
     const e = requireCam(); if (e) return e;
     return postSpoof(await getCrop());
   };
+  // Verify expects pre-aligned 128x128 — see get128Crop comment above.
   const runVerify = async () => {
     const e = requireCam(); if (e) return e;
-    // Verify endpoint now runs full inference internally; send full frame
-    return postVerify(await getFullFrame());
+    return postVerify(await get128Crop());
   };
+  // Register sends the FULL FRAME — the backend's inference_service.register_inference()
+  // runs detection + alignment internally. Sending a pre-crop breaks that flow.
   const runRegister = async (inputs) => {
     const e = requireCam(); if (e) return e;
-    const res = await postRegister(await getCrop(), inputs.person_id, inputs.person_name);
+    const res = await postRegister(await getFullFrame(), inputs.person_id, inputs.person_name);
     if (res.ok) {
-      // Refresh registered count once registration succeeds
       onRegistryChange?.();
       getVerificationStatus().then(setVerificationStatus);
     }
@@ -372,9 +396,9 @@ export default function DiagnosticsView({ camera, onRegistryChange }) {
         <EndpointCard
           title="Recognition (Verify)"
           path={PATHS.verify}
-          description="Compares a face against the Qdrant registry and returns the closest match with similarity score. Sends the full frame — backend runs detection + embedding internally."
+          description="Sends a 128×128 resized crop to match the backend's expected input format. Note: the backend's /verify route doesn't run detection + face alignment internally, so the similarity score is unreliable as a standalone test — use the Pipeline card for meaningful end-to-end verification."
           onRun={runVerify}
-          hint="Sends full frame"
+          hint="Sends 128×128 crop"
           summaryRenderer={(b) => [
             { key: 'Label',      val: b.recognition?.label || '—', kind: 'accent' },
             { key: 'Matched',    val: b.recognition?.matched ? 'YES' : 'no',
@@ -386,13 +410,13 @@ export default function DiagnosticsView({ camera, onRegistryChange }) {
         <EndpointCard
           title="Register Identity"
           path={PATHS.register}
-          description="Stores a face embedding in Qdrant under the given ID. Optionally include a display name shown in recognition results."
+          description="Stores a face embedding in Qdrant under the given ID. Sends the full frame — the backend runs detection + alignment internally before producing the embedding."
           inputs={[
             { key: 'person_id',   label: 'person_id',   placeholder: 'e.g. emp_021', required: true },
             { key: 'person_name', label: 'person_name', placeholder: 'optional display name' },
           ]}
           onRun={runRegister}
-          hint="Sends crop + ID"
+          hint="Sends full frame"
           summaryRenderer={(b) => [
             { key: 'Person ID', val: b.person_id || '—', kind: 'accent' },
             { key: 'Status',    val: b.status || '—' },
