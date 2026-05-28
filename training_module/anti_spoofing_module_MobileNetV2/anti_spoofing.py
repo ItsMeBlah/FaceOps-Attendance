@@ -1,8 +1,5 @@
 """
 Train the anti-spoofing MobileNetV2 model and save Keras + ONNX weights under model/.
-
-Run from this folder (or anywhere — paths below are relative to this file):
-  python anti_spoofing.py
 """
 
 import json
@@ -18,14 +15,12 @@ import tf2onnx
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
 
 
-#============================================================
 #General configuration
-#============================================================
 
 MODULE_DIR = Path.cwd()
 
-# Expected dataset layout (under MODULE_DIR or repo root if you symlink/copy LCC_FASD):
-# LCC_FASD/LCC_FASD_training/, LCC_FASD_development/, LCC_FASD_evaluation/
+#Expected dataset layout (under MODULE_DIR or repo root):
+#LCC_FASD/LCC_FASD_training/, LCC_FASD_development/, LCC_FASD_evaluation/
 RAW_DATA_DIR = MODULE_DIR / "LCC_FASD"
 
 MODEL_DIR = MODULE_DIR / "model"
@@ -35,6 +30,10 @@ MODEL_STEM = "anti_spoofing"
 TRAIN_FOLDER = "LCC_FASD_training"
 VAL_FOLDER = "LCC_FASD_development"
 TEST_FOLDER = "LCC_FASD_evaluation"
+
+TRAIN_DIR = RAW_DATA_DIR / TRAIN_FOLDER
+VAL_DIR = RAW_DATA_DIR / VAL_FOLDER
+TEST_DIR = RAW_DATA_DIR / TEST_FOLDER
 
 IMAGE_SIZE = 224
 IMG_SIZE = (IMAGE_SIZE, IMAGE_SIZE)
@@ -54,38 +53,21 @@ SEED = 77
 
 tf.keras.utils.set_random_seed(SEED)
 
-try:
-    tf.config.experimental.enable_op_determinism()
-except Exception:
-    pass
 
-#============================================================
 #Data loading helpers
-#============================================================
-
-def get_data_dirs() -> tuple[Path, Path, Path]:
-    """Return train, validation, and test directory paths."""
-    return (
-        RAW_DATA_DIR / TRAIN_FOLDER,
-        RAW_DATA_DIR / VAL_FOLDER,
-        RAW_DATA_DIR / TEST_FOLDER,
-    )
 
 
-def validate_data_dirs(train_dir: Path, val_dir: Path, test_dir: Path) -> None:
+def validate_data_dirs(train_dir, val_dir, test_dir):
     """Stop the script early if required dataset folders are missing."""
-    print("Train dir:", train_dir)
-    print("Validation dir:", val_dir)
-    print("Test dir:", test_dir)
+    paths = {
+        "Train": train_dir,
+        "Validation": val_dir,
+        "Test": test_dir,
+    }
+    for name, path in paths.items():
+        print(f"{name} dir: {path} (exists: {path.exists()})")
 
-    print("Train exists:", train_dir.exists())
-    print("Validation exists:", val_dir.exists())
-    print("Test exists:", test_dir.exists())
-
-    missing_dirs = [
-        str(path) for path in [train_dir, val_dir, test_dir]
-        if not path.exists()
-    ]
+    missing_dirs = [str(path) for path in paths.values() if not path.exists()]
 
     if missing_dirs:
         raise FileNotFoundError(
@@ -93,7 +75,7 @@ def validate_data_dirs(train_dir: Path, val_dir: Path, test_dir: Path) -> None:
         )
 
 
-def load_datasets(train_dir: Path, val_dir: Path, test_dir: Path):
+def load_datasets(train_dir, val_dir, test_dir):
     """Load image datasets from folders."""
     train_ds = tf.keras.utils.image_dataset_from_directory(
         train_dir,
@@ -122,7 +104,7 @@ def load_datasets(train_dir: Path, val_dir: Path, test_dir: Path):
     return train_ds, val_ds, test_ds
 
 
-def get_class_counts(dataset) -> dict[str, int]:
+def get_class_counts(dataset):
     """Count files per class using dataset.file_paths."""
     class_counts = {class_name: 0 for class_name in dataset.class_names}
 
@@ -134,7 +116,7 @@ def get_class_counts(dataset) -> dict[str, int]:
     return class_counts
 
 
-def print_and_save_dataset_summary(train_ds, val_ds, test_ds) -> None:
+def print_and_save_dataset_summary(train_ds, val_ds, test_ds):
     """Print and save dataset split/class-count summary."""
     train_counts = get_class_counts(train_ds)
     val_counts = get_class_counts(val_ds)
@@ -166,7 +148,7 @@ def print_and_save_dataset_summary(train_ds, val_ds, test_ds) -> None:
     print(f"Saved dataset summary: {summary_path}")
 
 
-def compute_class_weights(train_ds) -> dict[int, float]:
+def compute_class_weights(train_ds):
     """Compute balanced class weights from the training folder counts."""
     train_counts = get_class_counts(train_ds)
     total = sum(train_counts.values())
@@ -183,23 +165,9 @@ def compute_class_weights(train_ds) -> dict[int, float]:
 
     return class_weight
 
-
-def prepare_datasets(train_ds, val_ds, test_ds):
-    """Improve data pipeline performance."""
-    autotune = tf.data.AUTOTUNE
-
-    train_ds = train_ds.prefetch(buffer_size=autotune)
-    val_ds = val_ds.prefetch(buffer_size=autotune)
-    test_ds = test_ds.prefetch(buffer_size=autotune)
-
-    return train_ds, val_ds, test_ds
-
-
-#============================================================
 #Model helpers
-#============================================================
 
-def build_data_augmentation() -> tf.keras.Sequential:
+def build_data_augmentation():
     """Create data augmentation pipeline."""
     return tf.keras.Sequential(
         [
@@ -207,12 +175,11 @@ def build_data_augmentation() -> tf.keras.Sequential:
             tf.keras.layers.RandomRotation(0.10, seed=SEED),
             tf.keras.layers.RandomZoom(0.10, seed=SEED),
             tf.keras.layers.RandomTranslation(0.05, 0.05, seed=SEED),
-        ],
-        name="data_augmentation",
+        ]
     )
 
 
-def build_model(num_classes: int) -> tuple[tf.keras.Model, tf.keras.Model]:
+def build_model(num_classes):
     """Build a fresh MobileNetV2 anti-spoofing model."""
     preprocess_input = tf.keras.applications.mobilenet_v2.preprocess_input
 
@@ -222,7 +189,7 @@ def build_model(num_classes: int) -> tuple[tf.keras.Model, tf.keras.Model]:
         weights="imagenet",
     )
 
-    #1: keep the pretrained base frozen.
+    #keep the pretrained base frozen
     base_model.trainable = False
 
     data_augmentation = build_data_augmentation()
@@ -233,25 +200,29 @@ def build_model(num_classes: int) -> tuple[tf.keras.Model, tf.keras.Model]:
     x = preprocess_input(x)
     x = base_model(x, training=False)
 
-    #Extra task-specific convolutional layer for anti-spoofing features.
+    #Extra task-specific convolutional layer for anti-spoofing features
     x = tf.keras.layers.Conv2D(
         32,
         (3, 3),
         activation="relu",
         padding="same",
-        name="anti_spoof_conv",
     )(x)
 
+    #20% dropout for regularization
     x = tf.keras.layers.Dropout(0.2)(x)
+
+    #Global average pooling to reduce spatial dimensions
     x = global_average_layer(x)
+
+    #Dense layer for classification
     outputs = tf.keras.layers.Dense(num_classes, activation="softmax")(x)
 
-    model = tf.keras.Model(inputs, outputs, name="fasd_mobilenetv2")
+    model = tf.keras.Model(inputs, outputs)
 
     return model, base_model
 
 
-def create_callbacks() -> list[tf.keras.callbacks.Callback]:
+def create_callbacks():
     """Create training callbacks."""
     checkpoint_path = MODEL_DIR / "best_fasd_mobilenetv2_model.keras"
 
@@ -280,11 +251,10 @@ def create_callbacks() -> list[tf.keras.callbacks.Callback]:
     return [reduce_lr, early_stop, checkpoint]
 
 
-#============================================================
-#Training and evaluation
-#============================================================
 
-def plot_training_history(history, history_fine) -> None:
+#Training and evaluation
+
+def plot_training_history(history, history_fine):
     """Save training/validation accuracy and loss graph."""
     full_acc = history.history["accuracy"] + history_fine.history["accuracy"]
     full_val_acc = history.history["val_accuracy"] + history_fine.history["val_accuracy"]
@@ -321,7 +291,7 @@ def plot_training_history(history, history_fine) -> None:
     print(f"Saved training graph: {training_graph_path}")
 
 
-def evaluate_and_save_outputs(model, train_ds, val_ds, test_ds) -> None:
+def evaluate_and_save_outputs(model, train_ds, val_ds, test_ds):
     """Evaluate model and save metrics, confusion matrix, and classification report."""
     fine_tune_loss, fine_tune_acc = model.evaluate(val_ds)
     print("\nFine-Tuning Validation Results:")
@@ -376,19 +346,19 @@ def evaluate_and_save_outputs(model, train_ds, val_ds, test_ds) -> None:
     print(f"Saved metrics: {metrics_path}")
 
 
-def save_onnx(model: tf.keras.Model) -> Path:
+def save_onnx(model):
     """
     Export the trained Keras model to ONNX for backend inference.
 
-    Input shape: (N, 224, 224, 3) float32 RGB in [0, 255] — same as training.
+    Input shape: (N, 224, 224, 3) float32 RGB in [0, 255]
     """
     onnx_path = MODEL_DIR / f"{MODEL_STEM}.onnx"
     input_signature = (
-        tf.TensorSpec([None, IMAGE_SIZE, IMAGE_SIZE, 3], tf.float32, name="input"),
+        tf.TensorSpec([None, IMAGE_SIZE, IMAGE_SIZE, 3], tf.float32),
     )
 
     @tf.function(input_signature=input_signature)
-    def serving_fn(x: tf.Tensor) -> tf.Tensor:
+    def serving_fn(x):
         return model(x, training=False)
 
     print(f"Converting to ONNX (opset {ONNX_OPSET})...")
@@ -402,7 +372,7 @@ def save_onnx(model: tf.keras.Model) -> Path:
     return onnx_path
 
 
-def save_final_models(model: tf.keras.Model) -> None:
+def save_final_models(model):
     """Save Keras weights, and ONNX under model/."""
     keras_model_path = MODEL_DIR / f"{MODEL_STEM}.keras"
 
@@ -421,13 +391,13 @@ def save_final_models(model: tf.keras.Model) -> None:
         print("No temporary checkpoint model found to delete.")
 
 
-#============================================================
+
 #Main script
-#============================================================
 
-def main() -> None:
 
-    train_dir, val_dir, test_dir = get_data_dirs()
+def main():
+
+    train_dir, val_dir, test_dir = TRAIN_DIR, VAL_DIR, TEST_DIR
     validate_data_dirs(train_dir, val_dir, test_dir)
 
     train_ds, val_ds, test_ds = load_datasets(train_dir, val_dir, test_dir)
@@ -435,11 +405,7 @@ def main() -> None:
 
     class_weight = compute_class_weights(train_ds)
 
-    #Save class names before prefetching
     class_names = train_ds.class_names
-
-    train_ds, val_ds, test_ds = prepare_datasets(train_ds, val_ds, test_ds)
-    train_ds.class_names = class_names
 
     model, base_model = build_model(num_classes=len(class_names))
 
