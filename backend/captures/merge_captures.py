@@ -74,9 +74,9 @@ def save_split():
 def save_recognition_split():
     value = random.random()
 
-    if value < 0.7:
+    if value < 0.33:
         return "train"
-    elif value < 0.85:
+    elif value < 0.67:
         return "val"
     else:
         return "test"
