@@ -33,10 +33,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SPOOF_DATASET_SRC="$HOME/Desktop/Datasets/LCC_FASD"
-          EMOTION_DATASET_SRC="$HOME/Desktop/Datasets/emotion/AffectNet"
-          RECOGNITION_DATASET_SRC="$HOME/Desktop/Datasets/recognition/classification_data_aligned"
-          PRETRAINED_BACKBONE_SRC="$HOME/Desktop/Datasets/recognition/resnet18_110.pth"
+          SPOOF_DATASET_SRC="$HOME/Desktop/Dataset2/LCC_FASD"
+          EMOTION_DATASET_SRC="$HOME/Desktop/Dataset2/emotion/AffectNet"
+          RECOGNITION_DATASET_SRC="$HOME/Desktop/Dataset2/recognition/classification_data_aligned"
+          PRETRAINED_BACKBONE_SRC="$HOME/Desktop/Dataset2/recognition/resnet18_110.pth"
           
 
           if [ ! -d "$SPOOF_DATASET_SRC" ]; then
@@ -97,9 +97,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          SPOOF_DATASET_SRC="$HOME/Desktop/Datasets/LCC_FASD"
-          EMOTION_DATASET_SRC="$HOME/Desktop/Datasets/emotion/AffectNet"
-          RECOGNITION_DATASET_SRC="$HOME/Desktop/Datasets/recognition/classification_data_aligned"
+          SPOOF_DATASET_SRC="$HOME/Desktop/Dataset2/LCC_FASD"
+          EMOTION_DATASET_SRC="$HOME/Desktop/Dataset2/emotion/AffectNet"
+          RECOGNITION_DATASET_SRC="$HOME/Desktop/Dataset2/recognition/classification_data_aligned"
           rsync -a \
             training_module/anti_spoofing_module_MobileNetV2/LCC_FASD/ \
             "$SPOOF_DATASET_SRC/"

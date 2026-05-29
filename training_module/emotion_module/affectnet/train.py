@@ -15,6 +15,8 @@ from sklearn.metrics import (
     confusion_matrix,
     precision_recall_fscore_support,
 )
+from pathlib import Path
+
 
 from model import build_model, get_efficientnetv2s_norm_stats, unfreeze_backbone
 
@@ -31,6 +33,9 @@ LR_TUNED = 5e-5
 SAVE_PATH = "emotion.pth"
 METRICS_PATH = "metrics/test_metrics.txt"
 HISTORY_CSV_PATH = "metrics/training_history.csv"
+METRICS_DIR = Path("metrics")
+METRICS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 print(f"Using device: {DEVICE}")
 
