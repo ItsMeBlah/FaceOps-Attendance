@@ -122,61 +122,61 @@ jobs:
             alpine \
             sh -c "rm -rf /data/*"
 
-      - name: Train anti-spoofing model
-        shell: bash
-        working-directory: training_module/anti_spoofing_module_MobileNetV2
-        run: |
-          set -euo pipefail
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate "$SPOOF_CONDA_ENV"
-          python anti_spoofing.py
+      # - name: Train anti-spoofing model
+      #   shell: bash
+      #   working-directory: training_module/anti_spoofing_module_MobileNetV2
+      #   run: |
+      #     set -euo pipefail
+      #     source "$(conda info --base)/etc/profile.d/conda.sh"
+      #     conda activate "$SPOOF_CONDA_ENV"
+      #     python anti_spoofing.py
 
-      - name: Publish anti-spoofing weights
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$WEIGHTS_DIR"
-          cp -f training_module/anti_spoofing_module_MobileNetV2/model/anti_spoofing.onnx "$WEIGHTS_DIR/anti_spoofing.onnx"
+      # - name: Publish anti-spoofing weights
+      #   shell: bash
+      #   run: |
+      #     set -euo pipefail
+      #     mkdir -p "$WEIGHTS_DIR"
+      #     cp -f training_module/anti_spoofing_module_MobileNetV2/model/anti_spoofing.onnx "$WEIGHTS_DIR/anti_spoofing.onnx"
 
-      - name: Upload anti-spoofing reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: anti-spoofing-metrics
-          retention-days: 7
-          path: |
-            training_module/anti_spoofing_module_MobileNetV2/model/classification_report.txt
-            training_module/anti_spoofing_module_MobileNetV2/model/confusion_matrix.png
-            training_module/anti_spoofing_module_MobileNetV2/model/metrics.json
-            training_module/anti_spoofing_module_MobileNetV2/model/dataset_summary.csv
-            training_module/anti_spoofing_module_MobileNetV2/model/training_graph.png
-          if-no-files-found: error
+      # - name: Upload anti-spoofing reports
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: anti-spoofing-metrics
+      #     retention-days: 7
+      #     path: |
+      #       training_module/anti_spoofing_module_MobileNetV2/model/classification_report.txt
+      #       training_module/anti_spoofing_module_MobileNetV2/model/confusion_matrix.png
+      #       training_module/anti_spoofing_module_MobileNetV2/model/metrics.json
+      #       training_module/anti_spoofing_module_MobileNetV2/model/dataset_summary.csv
+      #       training_module/anti_spoofing_module_MobileNetV2/model/training_graph.png
+      #     if-no-files-found: error
 
-      - name: Train emotion model
-        shell: bash
-        working-directory: training_module/emotion_module/affectnet
-        run: |
-          set -eo pipefail
-          export NVCC_PREPEND_FLAGS="${NVCC_PREPEND_FLAGS-}"
-          source "$(conda info --base)/etc/profile.d/conda.sh"
-          conda activate "$EMOTION_CONDA_ENV"
-          set -u
-          PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" python train.py
-          python export_onnx.py
+      # - name: Train emotion model
+      #   shell: bash
+      #   working-directory: training_module/emotion_module/affectnet
+      #   run: |
+      #     set -eo pipefail
+      #     export NVCC_PREPEND_FLAGS="${NVCC_PREPEND_FLAGS-}"
+      #     source "$(conda info --base)/etc/profile.d/conda.sh"
+      #     conda activate "$EMOTION_CONDA_ENV"
+      #     set -u
+      #     PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" python train.py
+      #     python export_onnx.py
 
-      - name: Publish emotion weights
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$WEIGHTS_DIR"
-          cp -f training_module/emotion_module/affectnet/emotion.onnx "$WEIGHTS_DIR/emotion.onnx"
+      # - name: Publish emotion weights
+      #   shell: bash
+      #   run: |
+      #     set -euo pipefail
+      #     mkdir -p "$WEIGHTS_DIR"
+      #     cp -f training_module/emotion_module/affectnet/emotion.onnx "$WEIGHTS_DIR/emotion.onnx"
 
-      - name: Upload emotion metrics
-        uses: actions/upload-artifact@v4
-        with:
-          name: emotion-metrics
-          retention-days: 7
-          path: training_module/emotion_module/affectnet/metrics/**
-          if-no-files-found: error
+      # - name: Upload emotion metrics
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: emotion-metrics
+      #     retention-days: 7
+      #     path: training_module/emotion_module/affectnet/metrics/**
+      #     if-no-files-found: error
 
       - name: Train recognition model
         shell: bash
