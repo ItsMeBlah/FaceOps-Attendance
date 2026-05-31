@@ -78,3 +78,31 @@ checkpoints_resnet18/test_verification_pairs.csv
 Use `--no-verification-eval` to disable it, `--verification-negative-ratio` to control sampled different-person pairs, and `--no-verification-save-pairs` to skip pair CSV files.
 
 Early stopping is disabled by default. Enable it with `--early-stopping-patience`; it monitors validation accuracy and stops after that many epochs without an improvement of at least `--early-stopping-min-delta`. The final test evaluation still runs after early stopping.
+
+## Triplet Loss Training
+
+The triplet training path reuses the same dataset folders, transforms, and ResNet18 backbone. It samples:
+
+```text
+anchor   = one face image
+positive = another image of the same identity
+negative = an image of a different identity
+```
+
+Identities with fewer than two images are ignored. The classifier head is not used; the model trains L2-normalized 512-dimensional embeddings with `torch.nn.TripletMarginLoss`.
+
+Run from a classification checkpoint:
+
+```bash
+python train_triplet.py \
+  --pretrained-backbone checkpoints_resnet18/train_3/best.pth \
+  --output-dir checkpoints_resnet18_triplet/train_1 \
+  --freeze-backbone 3 \
+  --optimizer adamw \
+  --scheduler cosine \
+  --lr 0.0001 \
+  --margin 0.3 \
+  --epochs 30
+```
+
+Triplet logs include loss, triplet accuracy, mean positive distance, mean negative distance, and active-triplet ratio. Checkpoints use the same `model_state` backbone key as the classification trainer, so they remain compatible with the ONNX exporter.

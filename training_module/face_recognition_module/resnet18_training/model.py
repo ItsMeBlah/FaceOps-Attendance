@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
@@ -139,3 +140,14 @@ class ResNet18Face(nn.Module):
 
 def resnet18_face(**kwargs) -> ResNet18Face:
     return ResNet18Face(**kwargs)
+
+
+class NormalizedEmbeddingModel(nn.Module):
+    """Expose a unit-length face embedding for metric learning and verification."""
+
+    def __init__(self, backbone: nn.Module):
+        super().__init__()
+        self.backbone = backbone
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.normalize(self.backbone(x), p=2, dim=1)
