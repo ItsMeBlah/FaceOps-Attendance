@@ -166,3 +166,4 @@ For local frontend development, use `frontend/.env` to point Vite proxy to the b
 ```text
 VITE_BACKEND_URL=http://127.0.0.1:8000
 ```
+
