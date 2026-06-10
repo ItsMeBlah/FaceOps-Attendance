@@ -246,3 +246,5 @@ LCC_FASD_evaluation/
 
 #Temporary Example Recognition Files
 /recognition_data/
+
+/backend/tests

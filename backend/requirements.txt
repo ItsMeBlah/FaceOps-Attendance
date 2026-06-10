@@ -7,6 +7,8 @@ numpy
 opencv-python-headless
 pyyaml
 qdrant-client
+pymongo
+uuid6
 scikit-image
 tritonclient[http]
 onnxruntime-gpu

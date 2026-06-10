@@ -23,13 +23,19 @@ services:
       BACKEND_CAPTURES_DIR: /app/captures/screenshots
       BACKEND_USE_TRITON: "true"
       TRITON_URL: triton:8000
+      MONGODB_URI: mongodb://faceguard:faceguard@mongodb:27017/?authSource=admin
+      MONGODB_DATABASE: faceguard
     volumes:
       - ./backend/app/configs:/app/app/configs:ro
       - ./backend/weights:/app/weights:ro
       - captures_data:/app/captures/screenshots
     depends_on:
-      - qdrant
-      - triton
+      qdrant:
+        condition: service_started
+      triton:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
     restart: unless-stopped
 
   triton:
@@ -56,8 +62,28 @@ services:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
 
+  mongodb:
+    image: mongo:7
+    container_name: facial-recognition-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: faceguard
+      MONGO_INITDB_ROOT_PASSWORD: faceguard
+      MONGO_INITDB_DATABASE: faceguard
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--username", "faceguard", "--password", "faceguard", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
     name: qdrant_data
   captures_data:
     name: captures_data
+  mongodb_data:
+    name: mongodb_data
