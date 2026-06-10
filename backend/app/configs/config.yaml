@@ -20,3 +20,8 @@ qdrant:
   vector_size: 512
   top_k: 5
   max_registration_images: 5
+
+mongodb:
+  uri: mongodb://faceguard:faceguard@localhost:27017/?authSource=admin
+  database: faceguard
+  timeout_ms: 5000

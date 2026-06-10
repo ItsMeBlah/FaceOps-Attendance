@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 
 from app.config import settings
+from app.logging.logger import ResultLogger
 from app.services.base_service import BaseService
 from app.services.vector_store_service import VectorStoreService
 
@@ -19,6 +20,7 @@ class VerificationService(BaseService):
 		model_path: str | Path | None = None,
 		match_threshold: float = 0.3,
 		vector_store: VectorStoreService | None = None,
+		result_logger: ResultLogger | None = None,
 	) -> None:
 		super().__init__(
 			"resnet18_face",
@@ -29,6 +31,7 @@ class VerificationService(BaseService):
 		)
 		self.match_threshold = match_threshold
 		self.vector_store = vector_store or VectorStoreService()
+		self.result_logger = result_logger or ResultLogger()
 		self.max_registration_images = settings.qdrant_max_registration_images
 		self.INPUT_SIZE = (128, 128)
 		self.CHUNK_SIZE = 32
@@ -109,13 +112,19 @@ class VerificationService(BaseService):
 				f"At most {self.max_registration_images} registration images are allowed."
 			)
 
+		person_id = person_id.strip()
+		if not person_id:
+			raise ValueError("Person ID is required.")
+		person_name = (person_name or "").strip() or person_id
+
 		status = "updated" if self.vector_store.employee_exists(person_id) else "registered"
 		embeddings = self._extract_embeddings(face_images)
 		self.vector_store.register_embeddings(
 			employee_id=person_id,
-			employee_name=person_name or person_id,
+			employee_name=person_name,
 			embeddings=embeddings,
 		)
+		self.result_logger.upsert_registered_user(person_id, person_name)
 		return {
 			"person_id": person_id,
 			"status": status,

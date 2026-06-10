@@ -9,6 +9,7 @@ from app.services.face_detection_service import FaceDetectionService
 from app.services.anti_spoofing_service import AntiSpoofingService
 from app.services.emotion_service import EmotionService
 from app.services.verification_service import VerificationService
+from app.logging.logger import ResultLogger
 
 from app.schemas.pipeline_schema import FaceResult, InferenceResult
 
@@ -18,12 +19,14 @@ logger = logging.getLogger(__name__)
 class InferenceService:
     def __init__(
         self,
-        liveness_threshold: float = 0.99,
+        liveness_threshold: float = 0.999,
         verification_threshold: float = 0.3,
         use_triton: bool | None = None,
         triton_url: str | None = None,
         weights_dir: str | Path | None = None,
+        result_logger: ResultLogger | None = None,
     ) -> None:
+        self.result_logger = result_logger or ResultLogger()
         self.face_detection: FaceDetectionService = FaceDetectionService(
             use_triton=use_triton,
             triton_url=triton_url,
@@ -43,6 +46,7 @@ class InferenceService:
             use_triton=use_triton,
             triton_url=triton_url,
             weights_dir=weights_dir,
+            result_logger=self.result_logger,
         )
 
         self.liveness_threshold = liveness_threshold
@@ -95,7 +99,7 @@ class InferenceService:
             result.faces = face_results
             return result
 
-        live_crops = [face_crops[i] for i in live_idx]
+        # live_crops = [face_crops[i] for i in live_idx]
         live_verification_crops = [verification_crops[i] for i in live_idx]
 
         # Batch verification on live faces only
@@ -110,8 +114,7 @@ class InferenceService:
                 result.attendance_triggered.append(fr.employee_id)
 
         result.faces = face_results
-
-        print(result)
+        self.log_results(face_results, verification_indices=set(live_idx))
 
         return result
 
@@ -183,3 +186,31 @@ class InferenceService:
             fr.similarity = pred["confidence"]
             fr.verified = pred["matched"] and pred["confidence"] >= self.verification_threshold
         return face_results
+
+    def log_results(
+        self,
+        face_results: list[FaceResult],
+        verification_indices: set[int],
+    ) -> None:
+        """Store verification sessions and emotions for registered users."""
+        for index, face_result in enumerate(face_results):
+            try:
+                if not face_result.verified or not face_result.employee_id:
+                    continue
+
+                if index in verification_indices:
+                    self.result_logger.log_verification(
+                        user_id=face_result.employee_id,
+                        user_name=face_result.employee_name,
+                        matched=True,
+                        confidence=face_result.similarity,
+                    )
+
+                self.result_logger.log_emotion(
+                    user_id=face_result.employee_id,
+                    user_name=face_result.employee_name,
+                    emotion=face_result.emotion,
+                    confidence=face_result.emotion_score,
+                )
+            except Exception:
+                logger.exception("Failed to store inference logs for face index %s", index)

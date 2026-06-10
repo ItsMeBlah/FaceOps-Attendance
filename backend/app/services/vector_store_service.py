@@ -62,6 +62,7 @@ class VectorStoreService:
 					id=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{employee_id}:{index}")),
 					vector=vector,
 					payload={
+						"user_id": employee_id,
 						"employee_id": employee_id,
 						"employee_name": employee_name,
 						"image_index": index,
@@ -85,7 +86,7 @@ class VectorStoreService:
 		matches: list[VectorMatch] = []
 		for point in points:
 			payload = point.payload or {}
-			employee_id = str(payload.get("employee_id", ""))
+			employee_id = str(payload.get("user_id") or payload.get("employee_id", ""))
 			if not employee_id:
 				continue
 			matches.append(

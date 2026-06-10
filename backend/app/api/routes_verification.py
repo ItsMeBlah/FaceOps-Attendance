@@ -1,4 +1,5 @@
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from uuid6 import uuid7
 
 from app.schemas.verification_schema import RecognitionResponse, RecognitionResult, RegisterResponse
 from app.services.inference_service import InferenceService
@@ -62,11 +63,14 @@ async def verify_face(file: UploadFile = File(...)) -> RecognitionResponse:
 
 @router.post("/register", response_model=RegisterResponse)
 async def register_face(
-    person_id: str = Form(...),
-    person_name: str | None = Form(None),
+    person_name: str = Form(...),
     file: UploadFile = File(...),
 ) -> RegisterResponse:
     image = await _load_upload_image(file)
+    person_name = person_name.strip()
+    if not person_name:
+        raise HTTPException(status_code=400, detail="Person name is required.")
+    person_id = str(uuid7())
 
     try:
         result = inference_service.register_inference(
@@ -86,8 +90,7 @@ async def register_face(
 
 @router.post("/register-batch", response_model=RegisterResponse)
 async def register_faces(
-    person_id: str = Form(...),
-    person_name: str | None = Form(None),
+    person_name: str = Form(...),
     files: list[UploadFile] = File(...),
 ) -> RegisterResponse:
     if len(files) > verification_service.max_registration_images:
@@ -95,6 +98,10 @@ async def register_faces(
             status_code=400,
             detail=f"Upload at most {verification_service.max_registration_images} images.",
         )
+    person_name = person_name.strip()
+    if not person_name:
+        raise HTTPException(status_code=400, detail="Person name is required.")
+    person_id = str(uuid7())
 
     images = []
     for file in files:

@@ -129,6 +129,27 @@ class Settings:
 			str(_get(_config, "qdrant", "max_registration_images", default=5)),
 		)
 	)
+	mongodb_uri: str = os.getenv(
+		"MONGODB_URI",
+		str(
+			_get(
+				_config,
+				"mongodb",
+				"uri",
+				default="mongodb://localhost:27017",
+			)
+		),
+	)
+	mongodb_database: str = os.getenv(
+		"MONGODB_DATABASE",
+		str(_get(_config, "mongodb", "database", default="faceguard")),
+	)
+	mongodb_timeout_ms: int = int(
+		os.getenv(
+			"MONGODB_TIMEOUT_MS",
+			str(_get(_config, "mongodb", "timeout_ms", default=5000)),
+		)
+	)
 
 
 settings = Settings()
