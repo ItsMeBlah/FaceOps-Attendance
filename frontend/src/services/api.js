@@ -7,14 +7,9 @@
  */
 
 const ENDPOINTS = {
-  pipeline:       import.meta.env.VITE_ENDPOINT_PIPELINE,
-  detect:         import.meta.env.VITE_ENDPOINT_DETECT,
-  emotion:        import.meta.env.VITE_ENDPOINT_EMOTION,
-  spoof:          import.meta.env.VITE_ENDPOINT_SPOOF,
-  verify:         import.meta.env.VITE_ENDPOINT_VERIFY,
-  register:       import.meta.env.VITE_ENDPOINT_REGISTER,
-  registerBatch:  import.meta.env.VITE_ENDPOINT_REGISTER_BATCH,
-  status:         import.meta.env.VITE_ENDPOINT_VERIFICATION_STATUS,
+  pipeline:       import.meta.env.VITE_ENDPOINT_PIPELINE || '/api/pipeline/frame',
+  registerBatch:  import.meta.env.VITE_ENDPOINT_REGISTER_BATCH || '/api/verification/register-batch',
+  status:         import.meta.env.VITE_ENDPOINT_VERIFICATION_STATUS || '/api/verification/status',
 };
 
 export class ApiError extends Error {
@@ -26,11 +21,7 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * POST a single image. Returns both parsed body and timing/status info
- * so the diagnostics page can show latency, status, raw response.
- */
-export async function postImageDetailed(endpoint, blob, extraFields = {}) {
+async function postImage(endpoint, blob, extraFields = {}) {
   const formData = new FormData();
   for (const [k, v] of Object.entries(extraFields)) {
     if (v !== undefined && v !== null && v !== '') formData.append(k, v);
@@ -42,7 +33,7 @@ export async function postImageDetailed(endpoint, blob, extraFields = {}) {
 /**
  * POST multiple images under a single key. Used for batch registration.
  */
-export async function postMultiImageDetailed(endpoint, blobs, extraFields = {}) {
+async function postMultiImage(endpoint, blobs, extraFields = {}) {
   const formData = new FormData();
   for (const [k, v] of Object.entries(extraFields)) {
     if (v !== undefined && v !== null && v !== '') formData.append(k, v);
@@ -71,26 +62,22 @@ async function doRequest(endpoint, formData) {
   return { ok: resp.ok, status: resp.status, latency, body, error };
 }
 
-/* ── Detailed wrappers (used by the Dev Page) ──────────── */
-export const postPipeline       = (blob) => postImageDetailed(ENDPOINTS.pipeline, blob);
-export const postDetect         = (blob) => postImageDetailed(ENDPOINTS.detect, blob);
-export const postEmotion        = (blob) => postImageDetailed(ENDPOINTS.emotion, blob);
-export const postSpoof          = (blob) => postImageDetailed(ENDPOINTS.spoof, blob);
-export const postVerify         = (blob) => postImageDetailed(ENDPOINTS.verify, blob);
-export const postRegister       = (blob, personId, personName) =>
-  postImageDetailed(ENDPOINTS.register, blob, { person_id: personId, person_name: personName });
-export const postRegisterBatch  = (blobs, personId, personName) =>
-  postMultiImageDetailed(ENDPOINTS.registerBatch, blobs, { person_id: personId, person_name: personName });
-
-/* ── Throw-on-error wrappers (used by main page state) ── */
 async function postOrThrow(endpoint, blob, extra) {
-  const r = await postImageDetailed(endpoint, blob, extra);
+  const r = await postImage(endpoint, blob, extra);
   if (!r.ok) throw new ApiError(r.error || 'Request failed', r.status, r.body);
   return r.body;
 }
 export const analyzeFrame = (blob)                      => postOrThrow(ENDPOINTS.pipeline, blob);
-export const registerFace = (blob, personId, personName) =>
-  postOrThrow(ENDPOINTS.register, blob, { person_id: personId, person_name: personName });
+
+export const registerFaces = async (blobs, personName) => {
+  const result = await postMultiImage(
+    ENDPOINTS.registerBatch,
+    blobs,
+    { person_name: personName },
+  );
+  if (!result.ok) throw new ApiError(result.error || 'Registration failed', result.status, result.body);
+  return result.body;
+};
 
 /* ── Status / health ─────────────────────────────────── */
 export const getVerificationStatus = async () => {
@@ -107,6 +94,3 @@ export const ping = async () => {
     return r.ok || r.status === 405;
   } catch { return false; }
 };
-
-/** Expose paths (for displaying in UI) */
-export const getEndpointPaths = () => ({ ...ENDPOINTS });

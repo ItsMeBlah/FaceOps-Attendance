@@ -47,7 +47,6 @@ export const EmotionGlyph = ({ emotion = 'neutral' }) => {
 
 export const PlayIcon = (p) => <svg viewBox="0 0 16 16" fill="currentColor" {...p}><path d="M4 3 L13 8 L4 13 Z"/></svg>;
 export const PauseIcon = (p) => <svg viewBox="0 0 16 16" fill="currentColor" {...p}><rect x="4" y="3" width="3" height="10"/><rect x="9" y="3" width="3" height="10"/></svg>;
-export const PlusIcon = (p) => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" {...p}><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>;
 export const UploadIcon = (p) => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" {...p}><path d="M8 11 V3 M5 6 L8 3 L11 6"/><path d="M3 10 V13 H13 V10"/></svg>;
 export const DownloadIcon = (p) => <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" {...p}><path d="M8 3 V11 M5 8 L8 11 L11 8"/><path d="M3 10 V13 H13 V10"/></svg>;
 export const CameraOffIcon = (p) => (

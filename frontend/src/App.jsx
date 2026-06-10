@@ -4,21 +4,20 @@ import CameraView from './components/CameraView.jsx';
 import DetectionPanel from './components/DetectionPanel.jsx';
 import RegisteredFaces from './components/RegisteredFaces.jsx';
 import AttendanceLog from './components/AttendanceLog.jsx';
-import RegisterModal from './components/RegisterModal.jsx';
 import Toasts from './components/Toasts.jsx';
-import DiagnosticsView from './components/DiagnosticsView.jsx';
+import RegistrationView from './components/RegistrationView.jsx';
 import VideoUploadView from './components/VideoUploadView.jsx';
 import { useCamera } from './hooks/useCamera.js';
 import { useFrameAnalysis } from './hooks/useFrameAnalysis.js';
 import { useToasts } from './hooks/useToasts.js';
-import { registerFace, ping, getVerificationStatus } from './services/api.js';
+import { ping, getVerificationStatus } from './services/api.js';
 
 const DEDUP_WINDOW_MS = 10_000;
 
 export default function App() {
   // Routing 
   const routeFromHash = useCallback(() => {
-    if (window.location.hash === '#diagnostics') return 'diagnostics';
+    if (window.location.hash === '#register') return 'register';
     if (window.location.hash === '#video') return 'video';
     return 'main';
   }, []);
@@ -54,7 +53,6 @@ export default function App() {
 
   const [log, setLog] = useState([]);
   const [seenToday] = useState(() => new Set());
-  const [modalOpen, setModalOpen] = useState(false);
   const [pingResult, setPingResult] = useState(null);
 
   // Helper: refresh registered count from backend
@@ -70,7 +68,7 @@ export default function App() {
     ping().then((ok) => {
       setPingResult(ok);
       if (ok) push('Backend reachable', 'success');
-      else push('Backend not reachable — start it before running tests', 'error', 6000);
+      else push('Backend not reachable — start it to use the application', 'error', 6000);
     });
     refreshBackendCount();
   }, [push, refreshBackendCount]);
@@ -79,6 +77,12 @@ export default function App() {
   useEffect(() => {
     if (camera.error) push(`Camera: ${camera.error}`, 'error');
   }, [camera.error, push]);
+
+  // A route owns the camera while it is visible. Stop it before moving
+  // between the attendance and registration camera elements.
+  useEffect(() => {
+    camera.stop();
+  }, [route]);
 
   // Attendance ingestion (main page only)
   useEffect(() => {
@@ -121,31 +125,6 @@ export default function App() {
     else camera.start();
   }, [camera]);
 
-  const handleOpenRegister = useCallback(() => {
-    if (!camera.active) { push('Turn on the camera first to enrol someone', 'warn'); return; }
-    setModalOpen(true);
-  }, [camera.active, push]);
-
-  const handleRegister = useCallback(async (personId, personName) => {
-    const blob = await camera.captureBlob();
-    if (!blob) throw new Error('Could not capture a frame');
-    try {
-      await registerFace(blob, personId, personName);
-    } catch (e) {
-      throw new Error(`Registration failed: ${e.message}`);
-    }
-    setRegistry((r) => ({
-      ...r,
-      [personName || personId]: {
-        registeredAt: new Date().toISOString(),
-        lastSeen: null,
-      },
-    }));
-    push(`${personName || personId} enrolled`, 'success');
-    setModalOpen(false);
-    refreshBackendCount();
-  }, [camera, push, refreshBackendCount]);
-
   const handleRemove = useCallback(() => {
     if (!selectedName) return;
     if (!confirm(`Remove "${selectedName}" from your local list? (Backend record remains until a delete endpoint is added.)`)) return;
@@ -166,8 +145,12 @@ export default function App() {
         onNavigate={navigate}
       />
 
-      {route === 'diagnostics' ? (
-        <DiagnosticsView camera={camera} onRegistryChange={refreshBackendCount} />
+      {route === 'register' ? (
+        <RegistrationView
+          camera={camera}
+          push={push}
+          onRegistered={refreshBackendCount}
+        />
       ) : route === 'video' ? (
         <VideoUploadView push={push} />
       ) : (
@@ -178,7 +161,6 @@ export default function App() {
             analysis={analysis}
             checkinCount={seenToday.size}
             onToggle={handleToggleCamera}
-            onRegister={handleOpenRegister}
           />
           <aside className="column">
             <DetectionPanel analysis={analysis} />
@@ -194,12 +176,6 @@ export default function App() {
           </aside>
         </main>
       )}
-
-      <RegisterModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onConfirm={handleRegister}
-      />
 
       <Toasts toasts={toasts} />
     </div>

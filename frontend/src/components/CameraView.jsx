@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { drawFaces } from '../utils/drawing.js';
-import { PlayIcon, PauseIcon, PlusIcon, CameraOffIcon } from './Icons.jsx';
+import { PlayIcon, PauseIcon, CameraOffIcon } from './Icons.jsx';
 
 export default function CameraView({
   videoRef,
@@ -8,7 +8,6 @@ export default function CameraView({
   analysis,
   checkinCount,
   onToggle,
-  onRegister,
 }) {
   const overlayRef = useRef(null);
   const containerRef = useRef(null);
@@ -99,14 +98,6 @@ export default function CameraView({
           >
             {active ? <PauseIcon /> : <PlayIcon />}
             {active ? 'Turn off camera' : 'Turn on Camera'}
-          </button>
-          <button
-            className="btn btn--accent"
-            onClick={onRegister}
-            disabled={!active}
-          >
-            <PlusIcon />
-            Register Face
           </button>
         </div>
         <div className="camera__counter">
