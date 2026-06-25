@@ -7,7 +7,6 @@ from app.schemas.pipeline_schema import FaceAnalysis, FrameAnalysisResponse
 from app.schemas.verification_schema import RecognitionResult
 from app.services.inference_service import InferenceResult, InferenceService
 from app.utils.preprocess import load_image_from_bytes
-from captures.capture_service import save as save_capture
 
 router = APIRouter()
 inference_service = InferenceService()
@@ -55,6 +54,4 @@ async def analyze_frame(file: UploadFile = File(...)) -> FrameAnalysisResponse:
         for fr in result.faces
     ]
 
-    response = FrameAnalysisResponse(image_width=width, image_height=height, faces=face_results)
-    save_capture(contents, response.model_dump())
-    return response
+    return FrameAnalysisResponse(image_width=width, image_height=height, faces=face_results)

@@ -31,16 +31,22 @@ export default function TopBar({ cameraActive, connected, route, onNavigate }) {
           § 01 <em>Main Page</em>
         </button>
         <button
+          className={`topbar__nav-item ${route === 'dashboard' ? 'active' : ''}`}
+          onClick={() => onNavigate('dashboard')}
+        >
+          § 02 <em>Dashboard</em>
+        </button>
+        <button
           className={`topbar__nav-item ${route === 'register' ? 'active' : ''}`}
           onClick={() => onNavigate('register')}
         >
-          § 02 <em>Register</em>
+          § 03 <em>Register</em>
         </button>
         <button
           className={`topbar__nav-item ${route === 'video' ? 'active' : ''}`}
           onClick={() => onNavigate('video')}
         >
-          § 03 <em>Upload Video</em>
+          § 04 <em>Upload Video</em>
         </button>
       </nav>
 

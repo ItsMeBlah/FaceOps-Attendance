@@ -237,7 +237,7 @@ LCC_FASD_evaluation/
 /training_module/face_recognition_module/checkpoints_resnet18_triplet/
 /training_module/face_recognition_module/weights
 /backend/weights/arcface.onnx
-/backend/captures/screenshots/
+# Historical local capture data; runtime capture support has been removed.
 /backend/captures/
 /qdrant_storage/
 /backend/scripts/.merge_manifest.json

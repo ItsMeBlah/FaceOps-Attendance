@@ -10,6 +10,7 @@ if backend_root not in sys.path:
 
 from app.api.routes_anti_spoofing import router as anti_spoofing_router
 from app.api.routes_detection import router as detection_router
+from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_emotion import router as emotion_router
 from app.api.routes_pipeline import router as pipeline_router
 from app.api.routes_verification import router as verification_router
@@ -32,6 +33,7 @@ def health_check() -> dict[str, str]:
     return {"status": "ok", "service": "FaceGuard API"}
 
 app.include_router(detection_router, prefix="/api/detection", tags=["detection"])
+app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(emotion_router, prefix="/api/emotion", tags=["emotion"])
 app.include_router(anti_spoofing_router, prefix="/api/anti-spoofing", tags=["anti-spoofing"])
 app.include_router(verification_router, prefix="/api/verification", tags=["verification"])

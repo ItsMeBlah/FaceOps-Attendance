@@ -10,6 +10,8 @@ const ENDPOINTS = {
   pipeline:       import.meta.env.VITE_ENDPOINT_PIPELINE || '/api/pipeline/frame',
   registerBatch:  import.meta.env.VITE_ENDPOINT_REGISTER_BATCH || '/api/verification/register-batch',
   status:         import.meta.env.VITE_ENDPOINT_VERIFICATION_STATUS || '/api/verification/status',
+  dashboard:      import.meta.env.VITE_ENDPOINT_DASHBOARD || '/api/dashboard/summary',
+  dashboardUser:  import.meta.env.VITE_ENDPOINT_DASHBOARD_USER || '/api/dashboard/users',
 };
 
 export class ApiError extends Error {
@@ -86,6 +88,24 @@ export const getVerificationStatus = async () => {
     if (!r.ok) return null;
     return await r.json();
   } catch { return null; }
+};
+
+export const getDashboardSummary = async (days = 14, date) => {
+  const params = new URLSearchParams({ days: String(days) });
+  if (date) params.set('date', date);
+  const r = await fetch(`${ENDPOINTS.dashboard}?${params}`);
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new ApiError(body?.detail || 'Dashboard request failed', r.status, body);
+  return body;
+};
+
+export const getDashboardUserDetail = async (userId, limit = 20, date) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (date) params.set('date', date);
+  const r = await fetch(`${ENDPOINTS.dashboardUser}/${encodeURIComponent(userId)}?${params}`);
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new ApiError(body?.detail || 'User detail request failed', r.status, body);
+  return body;
 };
 
 export const ping = async () => {

@@ -19,8 +19,6 @@ RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
 COPY app ./app
-COPY captures ./captures
-
 
 EXPOSE 8000
 

@@ -27,12 +27,14 @@ class ResultLogger:
 		users_collection: str = "users",
 		verification_collection: str = "verification_logs",
 		emotion_collection: str = "emotion_stats",
+		daily_emotion_collection: str = "daily_emotion_stats",
 		verification_session_timeout: timedelta = timedelta(minutes=2),
 	) -> None:
 		self.mongo = mongo or database
 		self.users_collection = users_collection
 		self.verification_collection = verification_collection
 		self.emotion_collection = emotion_collection
+		self.daily_emotion_collection = daily_emotion_collection
 		self.verification_session_timeout = verification_session_timeout
 		self._indexes_ready = False
 
@@ -152,6 +154,13 @@ class ResultLogger:
 				},
 			},
 		)
+		self._increment_daily_emotion(
+			user_id=resolved_user_id,
+			user_name=resolved_user_name,
+			emotion=normalized_emotion,
+			confidence=confidence,
+			timestamp=timestamp,
+		)
 		return resolved_user_id
 
 	def upsert_registered_user(self, user_id: str, user_name: str) -> None:
@@ -216,6 +225,38 @@ class ResultLogger:
 			upsert=True,
 		)
 
+	def _increment_daily_emotion(
+		self,
+		user_id: str,
+		user_name: str,
+		emotion: str,
+		confidence: float,
+		timestamp: datetime,
+	) -> None:
+		date_key = timestamp.date().isoformat()
+		self.mongo.update_one(
+			self.daily_emotion_collection,
+			{"_id": f"{date_key}:{user_id}"},
+			{
+				"$setOnInsert": {
+					"user_id": user_id,
+					"date": date_key,
+					"created_at": timestamp,
+				},
+				"$inc": {
+					f"emotions.{emotion}": 1,
+					"total": 1,
+				},
+				"$set": {
+					"user_name": user_name,
+					"last_emotion": emotion,
+					"last_confidence": float(confidence),
+					"updated_at": timestamp,
+				},
+			},
+			upsert=True,
+		)
+
 	def _ensure_indexes(self) -> None:
 		if self._indexes_ready:
 			return
@@ -230,6 +271,12 @@ class ResultLogger:
 			"user_id",
 			unique=True,
 		)
+		daily_emotions = self.mongo.collection(self.daily_emotion_collection)
+		daily_emotions.create_index(
+			[("date", 1), ("user_id", 1)],
+			unique=True,
+		)
+		daily_emotions.create_index("date")
 		self._indexes_ready = True
 
 	def _is_active_session(

@@ -7,6 +7,7 @@ import AttendanceLog from './components/AttendanceLog.jsx';
 import Toasts from './components/Toasts.jsx';
 import RegistrationView from './components/RegistrationView.jsx';
 import VideoUploadView from './components/VideoUploadView.jsx';
+import DashboardView from './components/DashboardView.jsx';
 import { useCamera } from './hooks/useCamera.js';
 import { useFrameAnalysis } from './hooks/useFrameAnalysis.js';
 import { useToasts } from './hooks/useToasts.js';
@@ -17,6 +18,7 @@ const DEDUP_WINDOW_MS = 10_000;
 export default function App() {
   // Routing 
   const routeFromHash = useCallback(() => {
+    if (window.location.hash === '#dashboard') return 'dashboard';
     if (window.location.hash === '#register') return 'register';
     if (window.location.hash === '#video') return 'video';
     return 'main';
@@ -151,6 +153,8 @@ export default function App() {
           push={push}
           onRegistered={refreshBackendCount}
         />
+      ) : route === 'dashboard' ? (
+        <DashboardView push={push} />
       ) : route === 'video' ? (
         <VideoUploadView push={push} />
       ) : (

@@ -140,7 +140,6 @@ BACKEND_USE_TRITON=true
 TRITON_URL=triton:8000
 QDRANT_URL=http://qdrant:6333
 BACKEND_WEIGHTS_DIR=/app/weights
-BACKEND_CAPTURES_DIR=/app/captures
 ```
 
 ## Local Development

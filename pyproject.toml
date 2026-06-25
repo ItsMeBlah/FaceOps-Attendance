@@ -22,7 +22,6 @@ exclude = [
     ".venv",
     "venv",
     "weights",
-    "captures",
 ]
 
 [tool.ruff.lint]
@@ -46,6 +45,5 @@ exclude = '''
   | \.venv
   | venv
   | weights
-  | captures
 )/
 '''
