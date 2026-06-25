@@ -3,13 +3,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
-from app.services.face_detection_service import FaceDetectionService
+from app.logging.image_logger import ImageLogger
+from app.logging.logger import ResultLogger
 from app.services.anti_spoofing_service import AntiSpoofingService
 from app.services.emotion_service import EmotionService
+from app.services.face_detection_service import FaceDetectionService
 from app.services.verification_service import VerificationService
-from app.logging.logger import ResultLogger
+from app.utils.preprocess import align_image_by_eyes, blur_score
 
 from app.schemas.pipeline_schema import FaceResult, InferenceResult
 
@@ -25,8 +28,12 @@ class InferenceService:
         triton_url: str | None = None,
         weights_dir: str | Path | None = None,
         result_logger: ResultLogger | None = None,
+        image_logger: ImageLogger | None = None,
+        image_blur_threshold: float = 100.0,
     ) -> None:
         self.result_logger = result_logger or ResultLogger()
+        self.image_logger = image_logger or ImageLogger()
+        self.image_blur_threshold = image_blur_threshold
         self.face_detection: FaceDetectionService = FaceDetectionService(
             use_triton=use_triton,
             triton_url=triton_url,
@@ -112,6 +119,13 @@ class InferenceService:
             face_results[i] = fr
             if fr.verified and fr.employee_id:
                 result.attendance_triggered.append(fr.employee_id)
+                self.minio_logger(
+                    image=image,
+                    raw_crop=face_crops[i],
+                    bbox=bboxes[i],
+                    keypoints=keypoints[i],
+                    user_name=fr.employee_name or fr.employee_id,
+                )
 
         result.faces = face_results
         self.log_results(face_results, verification_indices=set(live_idx))
@@ -153,6 +167,98 @@ class InferenceService:
     def detect_faces(self, image: Image.Image) -> list[dict]:
         # Returns list[{"bbox": (x, y, w, h), "confidence": float, "crop": Image.Image, "verification_crop": Image.Image, "keypoints": [(x, y), ...]}]
         return self.face_detection.detect(image)
+
+    def minio_logger(
+        self,
+        image: Image.Image,
+        raw_crop: Image.Image,
+        bbox: tuple[float, float, float, float],
+        keypoints: list[tuple[float, float]],
+        user_name: str,
+    ) -> None:
+        image_index = self.raw_face_minio_logging(
+            user_name=user_name,
+            raw_crop=raw_crop,
+        )
+        self.aligned_face_minio_logging(
+            image=image,
+            raw_crop=raw_crop,
+            bbox=bbox,
+            keypoints=keypoints,
+            user_name=user_name,
+            image_index=image_index,
+        )
+
+    def raw_face_minio_logging(
+        self,
+        user_name: str,
+        raw_crop: Image.Image,
+    ) -> int | None:
+        try:
+            image_index = self.image_logger.next_image_index("raw", user_name)
+            self.image_logger.insert_raw_image(user_name, raw_crop, index=image_index)
+            return image_index
+        except Exception:
+            logger.exception("Failed to upload raw inference image for %s", user_name)
+            return None
+
+    def aligned_face_minio_logging(
+        self,
+        image: Image.Image,
+        raw_crop: Image.Image,
+        bbox: tuple[float, float, float, float],
+        keypoints: list[tuple[float, float]],
+        user_name: str,
+        image_index: int | None,
+    ) -> None:
+        if blur_score(raw_crop) < self.image_blur_threshold:
+            return
+
+        try:
+            landmark = np.asarray(keypoints, dtype=np.float32)
+            if landmark.shape != (5, 2):
+                raise ValueError("Detected face must include 5 keypoints for image alignment.")
+
+            img_w, img_h = image.size
+            bbox_x, bbox_y, bbox_w, bbox_h = bbox
+            raw_x1 = int(max(0, bbox_x * img_w))
+            raw_y1 = int(max(0, bbox_y * img_h))
+            raw_x2 = int(min(img_w, (bbox_x + bbox_w) * img_w))
+            raw_y2 = int(min(img_h, (bbox_y + bbox_h) * img_h))
+
+            expand_x = int((raw_x2 - raw_x1) * 0.15)
+            expand_y = int((raw_y2 - raw_y1) * 0.15)
+            expanded_x1 = max(0, raw_x1 - expand_x)
+            expanded_y1 = max(0, raw_y1 - expand_y)
+            expanded_x2 = min(img_w, raw_x2 + expand_x)
+            expanded_y2 = min(img_h, raw_y2 + expand_y)
+
+            expanded_crop = image.crop((expanded_x1, expanded_y1, expanded_x2, expanded_y2))
+            landmark[:, 0] = landmark[:, 0] * img_w - expanded_x1
+            landmark[:, 1] = landmark[:, 1] * img_h - expanded_y1
+            aligned_np = align_image_by_eyes(
+                np.asarray(expanded_crop.convert("RGB"), dtype=np.uint8),
+                landmark,
+            )
+            aligned_image = Image.fromarray(aligned_np.astype(np.uint8)).crop(
+                (
+                    raw_x1 - expanded_x1,
+                    raw_y1 - expanded_y1,
+                    raw_x2 - expanded_x1,
+                    raw_y2 - expanded_y1,
+                )
+            )
+            aligned_index = image_index or self.image_logger.next_image_index(
+                "aligned",
+                user_name,
+            )
+            self.image_logger.insert_aligned_image(
+                user_name,
+                aligned_image,
+                index=aligned_index,
+            )
+        except Exception:
+            logger.exception("Failed to upload aligned inference image for %s", user_name)
 
     def run_anti_spoofing_batch(
         self, face_crops: list[Image.Image], face_results: list[FaceResult]

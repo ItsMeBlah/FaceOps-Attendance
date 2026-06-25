@@ -9,10 +9,6 @@ triton:
 models:
   weights_dir: weights
 
-captures:
-  enabled: true
-  dir: captures/screenshots
-
 qdrant:
   url: http://localhost:6333
   api_key: ""
@@ -25,3 +21,13 @@ mongodb:
   uri: mongodb://faceguard:faceguard@localhost:27017/?authSource=admin
   database: faceguard
   timeout_ms: 5000
+
+minio:
+  endpoint: localhost:9000
+  access_key: faceguard
+  secret_key: faceguardsecret
+  secure: false
+  region: us-east-1
+  logs_bucket: logs
+  aligned_images_bucket: aligned-images
+  timeout_seconds: 1

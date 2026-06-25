@@ -74,6 +74,63 @@ def norm_crop(img: np.ndarray, landmark: np.ndarray, image_size: int = 112, mode
 	return cv2.warpAffine(img, M, (image_size, image_size), borderValue=0.0)
 
 
+def align_image_by_eyes(
+	img: np.ndarray,
+	landmark: np.ndarray,
+	image_size: int = 112,
+	mode: str = "arcface",
+	border_value: tuple[int, int, int] | int = 0,
+) -> np.ndarray:
+	"""
+	Align the full image using the same landmark transform as norm_crop().
+
+	Unlike norm_crop(), this keeps only the rotation component and preserves
+	the original image canvas, so it does not crop the face into a template.
+	landmark must contain 5 pixel-space points in this order:
+	left eye, right eye, nose, left mouth, right mouth.
+	"""
+	landmark = np.asarray(landmark, dtype=np.float32)
+	if landmark.shape != (5, 2):
+		raise ValueError("landmark must have shape (5, 2).")
+
+	norm_matrix, _ = estimate_norm(landmark, image_size=image_size, mode=mode)
+	rotation = norm_matrix[:, :2].astype(np.float32)
+	scale = float(np.linalg.norm(rotation[:, 0]))
+	if scale <= 0.0:
+		raise ValueError("Unable to estimate a valid face alignment rotation.")
+
+	rotation = rotation / scale
+	center = landmark[:2].mean(axis=0)
+	translation = center - rotation @ center
+	align_matrix = np.column_stack([rotation, translation]).astype(np.float32)
+
+	img_h, img_w = img.shape[:2]
+	return cv2.warpAffine(
+		img,
+		align_matrix,
+		(img_w, img_h),
+		flags=cv2.INTER_LINEAR,
+		borderValue=border_value,
+	)
+
+
+def blur_score(image: Image.Image | np.ndarray) -> float:
+	"""Measure image sharpness with the variance of the Laplacian."""
+	if isinstance(image, Image.Image):
+		arr = np.asarray(image.convert("RGB"), dtype=np.uint8)
+	else:
+		arr = np.asarray(image)
+
+	if arr.ndim == 3:
+		gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+	elif arr.ndim == 2:
+		gray = arr
+	else:
+		raise ValueError("image must be a 2D grayscale or 3D RGB array.")
+
+	return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
 def load_image_from_bytes(contents: bytes) -> Image.Image:
 	image = Image.open(io.BytesIO(contents))
 	return image.convert("RGB")
@@ -154,7 +211,6 @@ def crop_faces_v2(
 		landmark = np.asarray(face_keypoints, dtype=np.float32)
 		if landmark.shape != (5, 2):
 			raise ValueError("Each face must have 5 keypoints with shape (5, 2).")
-
 		landmark[:, 0] *= img_w
 		landmark[:, 1] *= img_h
 
@@ -162,5 +218,3 @@ def crop_faces_v2(
 		crops.append(Image.fromarray(aligned.astype(np.uint8)))
 
 	return crops
-
-

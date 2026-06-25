@@ -11,7 +11,6 @@ import yaml
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = BACKEND_ROOT / "app/configs/config.yaml"
 DEFAULT_WEIGHTS_DIR = BACKEND_ROOT / "weights"
-DEFAULT_CAPTURES_DIR = BACKEND_ROOT / "captures" / "screenshots"
 
 
 def _bool_from_env(name: str, default: bool = False) -> bool:
@@ -89,16 +88,6 @@ class Settings:
 			_get(_config, "models", "weights_dir", default=DEFAULT_WEIGHTS_DIR),
 		)
 	)
-	captures_enabled: bool = _bool_from_env(
-		"BACKEND_SAVE_CAPTURES",
-		_to_bool(_get(_config, "captures", "enabled", default=False)),
-	)
-	captures_dir: Path = _resolve_backend_path(
-		os.getenv(
-			"BACKEND_CAPTURES_DIR",
-			_get(_config, "captures", "dir", default=DEFAULT_CAPTURES_DIR),
-		)
-	)
 	qdrant_url: str = os.getenv(
 		"QDRANT_URL",
 		str(_get(_config, "qdrant", "url", default="http://localhost:6333")),
@@ -148,6 +137,40 @@ class Settings:
 		os.getenv(
 			"MONGODB_TIMEOUT_MS",
 			str(_get(_config, "mongodb", "timeout_ms", default=5000)),
+		)
+	)
+	minio_endpoint: str = os.getenv(
+		"MINIO_ENDPOINT",
+		str(_get(_config, "minio", "endpoint", default="localhost:9000")),
+	)
+	minio_access_key: str = os.getenv(
+		"MINIO_ACCESS_KEY",
+		str(_get(_config, "minio", "access_key", default="faceguard")),
+	)
+	minio_secret_key: str = os.getenv(
+		"MINIO_SECRET_KEY",
+		str(_get(_config, "minio", "secret_key", default="faceguardsecret")),
+	)
+	minio_secure: bool = _bool_from_env(
+		"MINIO_SECURE",
+		_to_bool(_get(_config, "minio", "secure", default=False)),
+	)
+	minio_region: str = os.getenv(
+		"MINIO_REGION",
+		str(_get(_config, "minio", "region", default="us-east-1")),
+	)
+	minio_logs_bucket: str = os.getenv(
+		"MINIO_LOGS_BUCKET",
+		str(_get(_config, "minio", "logs_bucket", default="logs")),
+	)
+	minio_aligned_images_bucket: str = os.getenv(
+		"MINIO_ALIGNED_IMAGES_BUCKET",
+		str(_get(_config, "minio", "aligned_images_bucket", default="aligned-images")),
+	)
+	minio_timeout_seconds: float = float(
+		os.getenv(
+			"MINIO_TIMEOUT_SECONDS",
+			str(_get(_config, "minio", "timeout_seconds", default=1)),
 		)
 	)
 

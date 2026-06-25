@@ -20,21 +20,28 @@ services:
     environment:
       QDRANT_URL: http://qdrant:6333
       BACKEND_WEIGHTS_DIR: /app/weights
-      BACKEND_CAPTURES_DIR: /app/captures/screenshots
       BACKEND_USE_TRITON: "true"
       TRITON_URL: triton:8000
       MONGODB_URI: mongodb://faceguard:faceguard@mongodb:27017/?authSource=admin
       MONGODB_DATABASE: faceguard
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: faceguard
+      MINIO_SECRET_KEY: faceguardsecret
+      MINIO_SECURE: "false"
+      MINIO_LOGS_BUCKET: logs
+      MINIO_ALIGNED_IMAGES_BUCKET: aligned-images
+      MINIO_TIMEOUT_SECONDS: "1"
     volumes:
       - ./backend/app/configs:/app/app/configs:ro
       - ./backend/weights:/app/weights:ro
-      - captures_data:/app/captures/screenshots
     depends_on:
       qdrant:
         condition: service_started
       triton:
         condition: service_started
       mongodb:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     restart: unless-stopped
 
@@ -80,10 +87,29 @@ services:
       retries: 5
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:latest
+    container_name: facial-recognition-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: faceguard
+      MINIO_ROOT_PASSWORD: faceguardsecret
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
     name: qdrant_data
-  captures_data:
-    name: captures_data
   mongodb_data:
     name: mongodb_data
+  minio_data:
+    name: minio_data

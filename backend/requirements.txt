@@ -8,6 +8,7 @@ opencv-python-headless
 pyyaml
 qdrant-client
 pymongo
+minio
 uuid6
 scikit-image
 tritonclient[http]
