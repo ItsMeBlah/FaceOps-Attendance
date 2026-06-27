@@ -1,3 +1,21 @@
+x-backend-environment: &backend-environment
+  QDRANT_URL: http://qdrant:6333
+  BACKEND_WEIGHTS_DIR: /app/weights
+  BACKEND_USE_TRITON: "true"
+  TRITON_URL: triton:8000
+  MONGODB_URI: mongodb://faceguard:faceguard@mongodb:27017/?authSource=admin
+  MONGODB_DATABASE: faceguard
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: faceguard
+  MINIO_SECRET_KEY: faceguardsecret
+  MINIO_SECURE: "false"
+  MINIO_LOGS_BUCKET: logs
+  MINIO_ALIGNED_IMAGES_BUCKET: aligned-images
+  MINIO_TIMEOUT_SECONDS: "1"
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_CLIENT_ID: faceguard-backend
+  KAFKA_DEFAULT_GROUP_ID: faceguard-workers
+
 services:
   frontend:
     build:
@@ -17,20 +35,7 @@ services:
     container_name: facial-recognition-backend
     ports:
       - "8000:8000"
-    environment:
-      QDRANT_URL: http://qdrant:6333
-      BACKEND_WEIGHTS_DIR: /app/weights
-      BACKEND_USE_TRITON: "true"
-      TRITON_URL: triton:8000
-      MONGODB_URI: mongodb://faceguard:faceguard@mongodb:27017/?authSource=admin
-      MONGODB_DATABASE: faceguard
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: faceguard
-      MINIO_SECRET_KEY: faceguardsecret
-      MINIO_SECURE: "false"
-      MINIO_LOGS_BUCKET: logs
-      MINIO_ALIGNED_IMAGES_BUCKET: aligned-images
-      MINIO_TIMEOUT_SECONDS: "1"
+    environment: *backend-environment
     volumes:
       - ./backend/app/configs:/app/app/configs:ro
       - ./backend/weights:/app/weights:ro
@@ -43,6 +48,66 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  database-writer-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: facial-recognition-database-writer-worker
+    command: ["python", "-m", "app.workers.inference_result_worker", "database"]
+    environment: *backend-environment
+    volumes:
+      - ./backend/app/configs:/app/app/configs:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  alert-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: facial-recognition-alert-worker
+    command: ["python", "-m", "app.workers.inference_result_worker", "alert"]
+    environment: *backend-environment
+    volumes:
+      - ./backend/app/configs:/app/app/configs:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  face-storage-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: facial-recognition-face-storage-worker
+    command: ["python", "-m", "app.workers.face_storage_worker"]
+    environment: *backend-environment
+    volumes:
+      - ./backend/app/configs:/app/app/configs:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   triton:
@@ -105,6 +170,49 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  kafka:
+    image: apache/kafka:3.7.2
+    container_name: facial-recognition-kafka
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  kafka-init:
+    image: apache/kafka:3.7.2
+    container_name: facial-recognition-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic inference-results --partitions 12 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic face-storage-requests --partitions 12 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+    restart: "no"
 
 volumes:
   qdrant_data:

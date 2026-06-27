@@ -1,5 +1,8 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from PIL import Image
+from uuid6 import uuid7
 
+from app.kafka_messaging.producer import kafka_producer
 from app.schemas.anti_spoofing_schema import AntiSpoofingResult
 from app.schemas.common_schema import DetectedFace, NormalizedBox, NormalizedPoint
 from app.schemas.emotion_schema import EmotionResult
@@ -9,24 +12,37 @@ from app.services.inference_service import InferenceResult, InferenceService
 from app.utils.preprocess import load_image_from_bytes
 
 router = APIRouter()
-inference_service = InferenceService()
+inference_service = InferenceService(kafka_producer=kafka_producer)
+
+
+def _load_valid_image(contents: bytes) -> tuple[Image.Image, int, int]:
+    image = load_image_from_bytes(contents)
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        raise ValueError("Invalid image size")
+    return image, width, height
 
 
 @router.post("/frame", response_model=FrameAnalysisResponse)
-async def analyze_frame(file: UploadFile = File(...)) -> FrameAnalysisResponse:
+async def analyze_frame(
+    file: UploadFile = File(...),
+    camera_id: str = Header("default-camera", alias="X-Camera-ID"),
+) -> FrameAnalysisResponse:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image uploads are supported.")
 
     try:
         contents = await file.read()
-        image = load_image_from_bytes(contents)
-        width, height = image.size
-        if width <= 0 or height <= 0:
-            raise ValueError("Invalid image size")
+        image, width, height = _load_valid_image(contents)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid image file.")
 
-    result: InferenceResult = inference_service.inference(image)
+    request_id = str(uuid7())
+    result: InferenceResult = inference_service.inference(
+        image,
+        camera_id=camera_id,
+        request_id=request_id,
+    )
 
     face_results = [
         FaceAnalysis(

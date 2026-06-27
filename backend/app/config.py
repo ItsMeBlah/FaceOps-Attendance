@@ -173,6 +173,18 @@ class Settings:
 			str(_get(_config, "minio", "timeout_seconds", default=1)),
 		)
 	)
+	kafka_bootstrap_servers: str = os.getenv(
+		"KAFKA_BOOTSTRAP_SERVERS",
+		str(_get(_config, "kafka", "bootstrap_servers", default="localhost:9094")),
+	)
+	kafka_client_id: str = os.getenv(
+		"KAFKA_CLIENT_ID",
+		str(_get(_config, "kafka", "client_id", default="faceguard-backend")),
+	)
+	kafka_default_group_id: str = os.getenv(
+		"KAFKA_DEFAULT_GROUP_ID",
+		str(_get(_config, "kafka", "default_group_id", default="faceguard-workers")),
+	)
 
 
 settings = Settings()

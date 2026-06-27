@@ -9,6 +9,7 @@ pyyaml
 qdrant-client
 pymongo
 minio
+confluent-kafka
 uuid6
 scikit-image
 tritonclient[http]

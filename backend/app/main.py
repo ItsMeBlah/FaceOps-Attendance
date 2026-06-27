@@ -1,8 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 import uvicorn
 import os
 import sys
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if backend_root not in sys.path:

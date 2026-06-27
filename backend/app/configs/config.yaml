@@ -31,3 +31,8 @@ minio:
   logs_bucket: logs
   aligned_images_bucket: aligned-images
   timeout_seconds: 1
+
+kafka:
+  bootstrap_servers: localhost:9094
+  client_id: faceguard-backend
+  default_group_id: faceguard-workers
