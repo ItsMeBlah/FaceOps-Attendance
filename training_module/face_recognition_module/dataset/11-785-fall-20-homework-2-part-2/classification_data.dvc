@@ -1,0 +1,6 @@
+outs:
+- md5: f7e28ed66cac4f30c590f6c5f92332fb.dir
+  size: 1211073253
+  nfiles: 396638
+  hash: md5
+  path: classification_data
