@@ -34,7 +34,8 @@ class FaceStorageWorker:
         user_name = _storage_user_name(event)
         raw_image = _image_from_payload(event.raw_face)
         aligned_image = _image_from_payload(event.aligned_face) if event.aligned_face else None
-        image_index = self.image_logger.next_image_index("raw", user_name)
+        log_date = self.image_logger.current_log_date()
+        image_index = self.image_logger.next_image_index("raw", user_name, log_date=log_date)
 
         logger.info(
             "Storing face images event_id=%s request_id=%s camera_id=%s face_id=%s user_id=%s user_name=%s image_index=%s",
@@ -50,6 +51,7 @@ class FaceStorageWorker:
             user_name=user_name,
             image=raw_image,
             index=image_index,
+            log_date=log_date,
         )
         aligned_object_name = None
         if aligned_image is not None:
@@ -57,12 +59,14 @@ class FaceStorageWorker:
                 user_name=user_name,
                 image=aligned_image,
                 index=image_index,
+                log_date=log_date,
             )
 
         self._store_metadata(
             event=event,
             user_name=user_name,
             image_index=image_index,
+            log_date=log_date,
             raw_object_name=raw_object_name,
             aligned_object_name=aligned_object_name,
         )
@@ -80,6 +84,7 @@ class FaceStorageWorker:
         event: FaceStorageRequestEvent,
         user_name: str,
         image_index: int,
+        log_date: str,
         raw_object_name: str,
         aligned_object_name: str | None,
     ) -> None:
@@ -93,6 +98,7 @@ class FaceStorageWorker:
                     "face_id": event.face_id,
                     "user_id": event.user_id,
                     "user_name": user_name,
+                    "log_date": log_date,
                     "image_index": image_index,
                     "raw_bucket": self.image_logger.logs_bucket,
                     "raw_object_name": raw_object_name,
