@@ -1,0 +1,30 @@
+minio:
+  endpoint: "localhost:9000"
+  access_key: "faceguard"
+  secret_key: "faceguardsecret"
+  secure: false
+  bucket: "aligned-images"
+  valid_extensions:
+    - ".jpg"
+    - ".jpeg"
+    - ".png"
+    - ".webp"
+  default_extension: ".jpg"
+
+pipeline:
+  data_dir: "data"
+  raw_dir_name: "_raw"
+  dataset_name_template: "MinIO_Dataset_{start_date}-{end_date}"
+  overwrite: true
+
+transform:
+  min_width: 64
+  min_height: 64
+  blur:
+    enabled: true
+    threshold: 80.0
+
+dvc:
+  enabled: true
+  remote: "origin"
+  push: true
