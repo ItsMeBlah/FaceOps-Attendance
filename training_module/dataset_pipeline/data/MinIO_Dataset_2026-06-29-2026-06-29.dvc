@@ -1,6 +1,6 @@
 outs:
-- md5: bf0f5ac92ea4a3eb8b9237ceaa0545f3.dir
-  size: 51926
-  nfiles: 14
+- md5: 6330edbb985df5552bcd72b36086cec1.dir
+  size: 46596
+  nfiles: 12
   hash: md5
   path: MinIO_Dataset_2026-06-29-2026-06-29

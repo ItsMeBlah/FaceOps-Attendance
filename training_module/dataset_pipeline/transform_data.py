@@ -37,11 +37,12 @@ def transform_dataset(
     if config.get("pipeline", {}).get("overwrite", True) and dataset_dir.exists():
         shutil.rmtree(dataset_dir)
     dataset_dir.mkdir(parents=True, exist_ok=True)
+    remove_dataset_metadata_files(dataset_dir)
 
     input_images = [
         path
         for path in raw_dir.rglob("*")
-        if path.is_file() and path.name != "extraction_manifest.json"
+        if path.is_file() and path.name not in {"extraction_manifest.json", "transform_report.json"}
     ]
     rejected: list[dict[str, str]] = []
     accepted_count = 0
@@ -71,8 +72,7 @@ def transform_dataset(
         rejected_count=len(rejected),
         rejected=rejected,
     )
-    write_transform_report(dataset_dir, report)
-    copy_manifest(raw_dir, dataset_dir)
+    write_transform_report(raw_dir, report)
 
     logger.info(
         "Transformed dataset raw=%s output=%s accepted=%s rejected=%s",
@@ -123,14 +123,15 @@ def image_blur_score(source_path: Path) -> float:
     return float(cv2.Laplacian(pixels, cv2.CV_64F).var())
 
 
-def write_transform_report(dataset_dir: Path, report: TransformReport) -> Path:
-    report_path = dataset_dir / "transform_report.json"
+def write_transform_report(report_dir: Path, report: TransformReport) -> Path:
+    report_path = report_dir / "transform_report.json"
     with report_path.open("w", encoding="utf-8") as handle:
         json.dump(asdict(report), handle, indent=2)
     return report_path
 
 
-def copy_manifest(raw_dir: Path, dataset_dir: Path) -> None:
-    manifest_path = raw_dir / "extraction_manifest.json"
-    if manifest_path.is_file():
-        shutil.copy2(manifest_path, dataset_dir / "extraction_manifest.json")
+def remove_dataset_metadata_files(dataset_dir: Path) -> None:
+    for file_name in ("extraction_manifest.json", "transform_report.json"):
+        metadata_path = dataset_dir / file_name
+        if metadata_path.is_file():
+            metadata_path.unlink()
