@@ -77,7 +77,7 @@ class TrainConfig:
     resume: str = ""
     resume_training_state: bool = False
     test_only: bool = False
-    pretrained_backbone: str = "/home/minhcao/Swinburne/COS30082/CustomProject/-Facial-Recognition-with-Emotion-and-Liveness/training_module/face_recognition_module/weights/resnet18_110.pth"
+    pretrained_backbone: str = "/weights/resnet18_110.pth"
     no_cuda: bool = False
 
 

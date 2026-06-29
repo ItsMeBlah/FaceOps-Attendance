@@ -1,0 +1,17 @@
+dagshub:
+  repo_owner: "your-dagshub-username"
+  repo_name: "your-dagshub-repo"
+  username: "your-dagshub-username"
+  token: "your-dagshub-token"
+
+mlflow:
+  experiment_name: "face-recognition-training"
+  run_name: ""
+  artifact_path: "training_results"
+  tracking_uri: ""
+
+model:
+  checkpoint_name: "best.pth"
+  artifact_path: "model"
+  registered_model_name: "face-recognition-arcface"
+  normalize_output: true
