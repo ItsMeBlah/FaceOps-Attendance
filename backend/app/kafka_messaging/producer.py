@@ -13,6 +13,7 @@ from app.kafka_messaging.schemas import (
     InferenceResultEvent,
 )
 from app.kafka_messaging.topics import (
+    CAMERA_FRAME_EVENTS_TOPIC,
     FACE_STORAGE_REQUESTS_TOPIC,
     INFERENCE_RESULTS_TOPIC,
 )
@@ -100,6 +101,42 @@ class KafkaEventProducer:
     def send_face_storage_request(self, event: FaceStorageRequestEvent) -> None:
         """Model path -> face storage worker."""
         self.send(FACE_STORAGE_REQUESTS_TOPIC, event, key=event.camera_id)
+
+    def send_camera_frame(
+        self,
+        camera_id: str,
+        frame_id: str,
+        frame_bytes: bytes,
+        timestamp: str,
+        content_type: str = "image/jpeg",
+    ) -> None:
+        """RTSP ingestion path -> inference workers.
+
+        Camera frames are sent as raw JPEG bytes to avoid bloating Kafka
+        messages with base64. Metadata stays in headers so consumers can route
+        by camera without parsing a JSON envelope.
+        """
+        headers = {
+            "camera_id": camera_id,
+            "frame_id": frame_id,
+            "timestamp": timestamp,
+            "content_type": content_type,
+        }
+        logger.info(
+            "Queueing Kafka frame topic=%s camera_id=%s frame_id=%s bytes=%s",
+            CAMERA_FRAME_EVENTS_TOPIC,
+            camera_id,
+            frame_id,
+            len(frame_bytes),
+        )
+        self.producer.produce(
+            topic=CAMERA_FRAME_EVENTS_TOPIC,
+            key=camera_id.encode("utf-8"),
+            value=frame_bytes,
+            headers=[(key, value.encode("utf-8")) for key, value in headers.items()],
+            callback=self._delivery_report,
+        )
+        self.producer.poll(0)
 
     def flush(self, timeout: float = 5.0) -> None:
         self.producer.flush(timeout)

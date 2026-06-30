@@ -35,6 +35,8 @@ services:
     container_name: facial-recognition-backend
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment: *backend-environment
     volumes:
       - ./backend/app/configs:/app/app/configs:ro
@@ -104,6 +106,27 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  rtsp-inference-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: facial-recognition-rtsp-inference-worker
+    command: ["python", "-m", "app.workers.rtsp_inference_worker"]
+    environment: *backend-environment
+    volumes:
+      - ./backend/app/configs:/app/app/configs:ro
+      - ./backend/weights:/app/weights:ro
+    depends_on:
+      qdrant:
+        condition: service_started
+      triton:
+        condition: service_started
       kafka:
         condition: service_healthy
       kafka-init:
@@ -209,6 +232,7 @@ services:
       - -c
       - |
         set -e
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic camera-frame-events --partitions 12 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic inference-results --partitions 12 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic face-storage-requests --partitions 12 --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list

@@ -36,3 +36,9 @@ kafka:
   bootstrap_servers: localhost:9094
   client_id: faceguard-backend
   default_group_id: faceguard-workers
+
+rtsp:
+  sample_interval_seconds: 1.0
+  preview_fps: 8.0
+  frame_width: 960
+  jpeg_quality: 80

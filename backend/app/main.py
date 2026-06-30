@@ -19,6 +19,7 @@ from app.api.routes_detection import router as detection_router
 from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_emotion import router as emotion_router
 from app.api.routes_pipeline import router as pipeline_router
+from app.api.routes_rtsp import router as rtsp_router
 from app.api.routes_verification import router as verification_router
 
 app = FastAPI(title="FaceGuard API", version="0.3.1")
@@ -44,6 +45,7 @@ app.include_router(emotion_router, prefix="/api/emotion", tags=["emotion"])
 app.include_router(anti_spoofing_router, prefix="/api/anti-spoofing", tags=["anti-spoofing"])
 app.include_router(verification_router, prefix="/api/verification", tags=["verification"])
 app.include_router(pipeline_router, prefix="/api/pipeline", tags=["pipeline"])
+app.include_router(rtsp_router, prefix="/api/rtsp", tags=["rtsp"])
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

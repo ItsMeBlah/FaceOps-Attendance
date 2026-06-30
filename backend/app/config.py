@@ -185,6 +185,30 @@ class Settings:
 		"KAFKA_DEFAULT_GROUP_ID",
 		str(_get(_config, "kafka", "default_group_id", default="faceguard-workers")),
 	)
+	rtsp_sample_interval_seconds: float = float(
+		os.getenv(
+			"RTSP_SAMPLE_INTERVAL_SECONDS",
+			str(_get(_config, "rtsp", "sample_interval_seconds", default=1.0)),
+		)
+	)
+	rtsp_preview_fps: float = float(
+		os.getenv(
+			"RTSP_PREVIEW_FPS",
+			str(_get(_config, "rtsp", "preview_fps", default=8.0)),
+		)
+	)
+	rtsp_frame_width: int = int(
+		os.getenv(
+			"RTSP_FRAME_WIDTH",
+			str(_get(_config, "rtsp", "frame_width", default=960)),
+		)
+	)
+	rtsp_jpeg_quality: int = int(
+		os.getenv(
+			"RTSP_JPEG_QUALITY",
+			str(_get(_config, "rtsp", "jpeg_quality", default=80)),
+		)
+	)
 
 
 settings = Settings()
