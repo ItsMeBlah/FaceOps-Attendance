@@ -48,6 +48,12 @@ export default function TopBar({ cameraActive, connected, route, onNavigate }) {
         >
           § 04 <em>Upload Video</em>
         </button>
+        <button
+          className={`topbar__nav-item ${route === 'rtsp' ? 'active' : ''}`}
+          onClick={() => onNavigate('rtsp')}
+        >
+          § 05 <em>RTSP</em>
+        </button>
       </nav>
 
       <div className="topbar__meta">

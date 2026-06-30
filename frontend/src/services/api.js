@@ -12,6 +12,7 @@ const ENDPOINTS = {
   status:         import.meta.env.VITE_ENDPOINT_VERIFICATION_STATUS || '/api/verification/status',
   dashboard:      import.meta.env.VITE_ENDPOINT_DASHBOARD || '/api/dashboard/summary',
   dashboardUser:  import.meta.env.VITE_ENDPOINT_DASHBOARD_USER || '/api/dashboard/users',
+  rtsp:           import.meta.env.VITE_ENDPOINT_RTSP || '/api/rtsp',
 };
 
 export class ApiError extends Error {
@@ -64,6 +65,19 @@ async function doRequest(endpoint, formData) {
   return { ok: resp.ok, status: resp.status, latency, body, error };
 }
 
+async function doJsonRequest(endpoint, options = {}) {
+  const r = await fetch(endpoint, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new ApiError(body?.detail || `HTTP ${r.status}`, r.status, body);
+  return body;
+}
+
 async function postOrThrow(endpoint, blob, extra) {
   const r = await postImage(endpoint, blob, extra);
   if (!r.ok) throw new ApiError(r.error || 'Request failed', r.status, r.body);
@@ -107,6 +121,26 @@ export const getDashboardUserDetail = async (userId, limit = 20, date) => {
   if (!r.ok) throw new ApiError(body?.detail || 'User detail request failed', r.status, body);
   return body;
 };
+
+export const startRtspStream = (payload) => doJsonRequest(`${ENDPOINTS.rtsp}/start`, {
+  method: 'POST',
+  body: JSON.stringify(payload),
+});
+
+export const stopRtspStream = (cameraId) => doJsonRequest(
+  `${ENDPOINTS.rtsp}/${encodeURIComponent(cameraId)}/stop`,
+  { method: 'POST' },
+);
+
+export const getRtspStreamStatus = async (cameraId) => {
+  const r = await fetch(`${ENDPOINTS.rtsp}/${encodeURIComponent(cameraId)}/status`);
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new ApiError(body?.detail || `HTTP ${r.status}`, r.status, body);
+  return body;
+};
+
+export const getRtspFeedUrl = (cameraId) =>
+  `${ENDPOINTS.rtsp}/${encodeURIComponent(cameraId)}/feed`;
 
 export const ping = async () => {
   try {

@@ -8,6 +8,7 @@ import Toasts from './components/Toasts.jsx';
 import RegistrationView from './components/RegistrationView.jsx';
 import VideoUploadView from './components/VideoUploadView.jsx';
 import DashboardView from './components/DashboardView.jsx';
+import RtspView from './components/RtspView.jsx';
 import { useCamera } from './hooks/useCamera.js';
 import { useFrameAnalysis } from './hooks/useFrameAnalysis.js';
 import { useToasts } from './hooks/useToasts.js';
@@ -21,6 +22,7 @@ export default function App() {
     if (window.location.hash === '#dashboard') return 'dashboard';
     if (window.location.hash === '#register') return 'register';
     if (window.location.hash === '#video') return 'video';
+    if (window.location.hash === '#rtsp') return 'rtsp';
     return 'main';
   }, []);
   const [route, setRoute] = useState(routeFromHash);
@@ -157,6 +159,8 @@ export default function App() {
         <DashboardView push={push} />
       ) : route === 'video' ? (
         <VideoUploadView push={push} />
+      ) : route === 'rtsp' ? (
+        <RtspView push={push} />
       ) : (
         <main className="app__main">
           <CameraView
