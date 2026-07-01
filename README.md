@@ -8,6 +8,10 @@ The application is built around a hybrid inference flow:
 - Kafka is used for backend background pipelines, including RTSP frame events, inference result writes, alerts, and cropped face storage.
 - The React dashboard does not read Kafka directly. It reads historical attendance, emotion, recognition, and camera data from MongoDB through FastAPI APIs.
 
+## System Diagram
+
+![FaceOps system diagram](assets/FaceOPs%20Diagram.drawio.png)
+
 ## Table of Contents
 
 - [Introduction](#introduction)
@@ -44,10 +48,6 @@ Core capabilities:
 - MinIO image storage for raw face logs and aligned face datasets.
 - Dataset pipeline from MinIO to local data folders and DVC/DagsHub.
 - MLflow logging to DagsHub for training metrics, artifacts, and registered models.
-
-## System Diagram
-
-![FaceOps system diagram](assets/FaceOPs%20Diagram.drawio.png)
 
 ## Installation
 
