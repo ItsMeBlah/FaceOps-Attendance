@@ -301,11 +301,11 @@ MinIO_Dataset_{start-date}-{end-date}
 
 Current reported model performance:
 
-| Model | Metric |
+| Model | Accuracy |
 | --- | ---: |
-| Emotion classification | 69.06% accuracy |
-| Face recognition | 90.525% accuracy |
-| Anti-spoofing | 97.638% accuracy |
+| Emotion classification | 69.06% |
+| Face recognition | 90.525% |
+| Anti-spoofing | 97.638% |
 
 ## Main API Endpoints
 
