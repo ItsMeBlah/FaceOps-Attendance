@@ -45,6 +45,26 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt
+          python -m pip uninstall -y onnxruntime-gpu
+          python -m pip install onnxruntime
+
+      - name: Print backend runtime diagnostics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import onnxruntime as ort
+
+          print("ONNX Runtime providers:", ort.get_available_providers())
+          weights_dir = Path("backend/weights")
+          for model_name in (
+              "face_detection.onnx",
+              "emotion.onnx",
+              "anti_spoofing.onnx",
+              "resnet18_face.onnx",
+          ):
+              model_path = weights_dir / model_name
+              print(f"{model_name}: exists={model_path.is_file()} size={model_path.stat().st_size if model_path.is_file() else 0}")
+          PY
 
       - name: Validate backend Python syntax
         run: python -m compileall -q backend/app
@@ -97,6 +117,28 @@ jobs:
 
       - name: Run API endpoint tests
         run: |
+          headers_file="$(mktemp)"
+          body_file="$(mktemp)"
+          status="$(
+            curl -sS \
+              -D "${headers_file}" \
+              -o "${body_file}" \
+              -w "%{http_code}" \
+              -F "file=@backend/API_endpoint_test/test_assets/unit_test_img.jpg;type=image/jpeg" \
+              http://127.0.0.1:8000/api/detection/detect || true
+          )"
+
+          if [ "${status}" != "200" ]; then
+            echo "Detection smoke test failed with HTTP ${status}"
+            echo "Response headers:"
+            cat "${headers_file}"
+            echo "Response body:"
+            cat "${body_file}"
+            echo "Backend server log:"
+            cat backend-server.log || true
+            exit 1
+          fi
+
           pytest backend/API_endpoint_test -v --base-url http://127.0.0.1:8000
 
       - name: Show backend logs on failure
