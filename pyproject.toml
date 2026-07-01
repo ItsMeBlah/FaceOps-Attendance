@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
-testpaths = ["backend/API_endpoint_unit_test"]
+testpaths = ["backend/API_endpoint_test"]
 python_files = ["*_unit_tests.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
